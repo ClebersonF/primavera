@@ -8,6 +8,7 @@
 
 /** FS = término→início, SS = início→início, FF = término→término, SF = início→término. */
 export type LinkType = "FS" | "SS" | "FF" | "SF";
+export const LINK_TYPES: readonly LinkType[] = ["FS", "SS", "FF", "SF"];
 
 export interface Predecessor {
   /** Id da atividade predecessora. */

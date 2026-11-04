@@ -1,5 +1,6 @@
 import { DEFAULT_CALENDAR, workDaysBetween, type WorkCalendar } from "../cpm/calendar";
 import { addDaysIso, toLocalDate } from "../dates";
+import type { LinkType } from "../cpm/types";
 import type { WbsNodeInput } from "../wbs/wbs";
 
 /**
@@ -17,6 +18,12 @@ export interface ActivityLike {
   durationDays?: number;
   /** Se informado, substitui a dependência assumida em sequência. */
   predecessorIds?: string[];
+  /** Predecessoras com tipo e defasagem; tem precedência sobre `predecessorIds`. `[]` = sem predecessoras. */
+  predecessors?: { id: string; type?: LinkType; lag?: number }[];
+  /** 0..100; vale sobre o percentual derivado do status. */
+  percentComplete?: number;
+  /** "Não iniciar antes de" (YYYY-MM-DD). */
+  notBefore?: string;
 }
 
 export interface WorkLike {
@@ -102,23 +109,35 @@ export function workToWbsInputs(
   });
   if (budgetCents > 0) assumptions.push("Custo: o orçamento da obra foi rateado pela duração das atividades.");
 
+  const known = new Set(work.activities.map((a) => a.id));
   const leaves: WbsNodeInput[] = work.activities.map((a, i) => {
     let predecessors: WbsNodeInput["predecessors"];
-    if (a.predecessorIds !== undefined) {
-      predecessors = a.predecessorIds.map((id) => ({ id }));
+    const explicit = a.predecessors ?? a.predecessorIds?.map((id) => ({ id }));
+    if (explicit !== undefined) {
+      predecessors = explicit.filter((p) => {
+        if (known.has(p.id) && p.id !== a.id) return true;
+        assumptions.push(`"${a.title}": predecessora "${p.id}" não existe mais e foi ignorada.`);
+        return false;
+      });
     } else if (i > 0) {
       predecessors = [{ id: work.activities[i - 1]!.id }];
       chained = true;
     }
-    if (a.status === "doing") guessedPercent = true;
+    if (a.percentComplete === undefined && a.status === "doing") guessedPercent = true;
+    let startNoEarlierThan: number | undefined;
+    if (a.notBefore !== undefined) {
+      const offset = workDaysBetween(startDate, dateOnly(a.notBefore), cal);
+      if (offset > 0) startNoEarlierThan = offset;
+    }
     return {
       id: a.id,
       parentId: rootId,
       name: a.title,
       duration: durations[i]!,
       plannedCost: costs[i]!,
-      percentComplete: PERCENT[a.status],
+      percentComplete: a.percentComplete ?? PERCENT[a.status],
       predecessors,
+      startNoEarlierThan,
     };
   });
   if (chained) assumptions.push("Dependências assumidas em sequência, na ordem da lista de atividades.");

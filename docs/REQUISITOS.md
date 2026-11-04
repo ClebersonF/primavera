@@ -45,21 +45,21 @@ Atualizado em 04/11/2026. Legenda: **OK** atendido e validado · **Parcial** ate
 | # | Função | Status | Onde / limite |
 |---|---|---|---|
 | P1 | EAP/WBS com rollup de prazo, custo e progresso | Parcial | Motor completo; a obra vira EAP de um nível (raiz + atividades). Não há edição de EAP na tela |
-| P2 | CPM, vínculos FS/SS/FF/SF com lag, folga total e livre, caminho crítico | Parcial | Motor completo e testado; a tela só monta dependências **em sequência (FS)** porque a atividade não guarda predecessoras |
-| P3 | Restrições de data | Parcial | Só "não iniciar antes de" (SNET) |
-| P4 | Calendários e feriados | Parcial | Dias úteis seg–sex e feriados no motor; sem cadastro de feriados/calendários por atividade na tela |
+| P2 | CPM, vínculos FS/SS/FF/SF com lag, folga total e livre, caminho crítico | **OK** | Aba **Atividades** do planejamento: predecessoras por código ("1.2 SS+2"), tipos FS/SS/FF/SF e defasagem; ciclos são recusados ao salvar |
+| P3 | Restrições de data | Parcial | "Não iniciar antes de" (SNET) editável por atividade; sem "terminar até"/"obrigatória" |
+| P4 | Calendários e feriados | Parcial | Feriados cadastráveis por obra (aba Atividades) e usados em datas, hoje e EVM; um calendário por obra, sem calendários por atividade |
 | P5 | Gantt e caminho crítico | OK | `/obras/$id/cronograma` |
-| P6 | Gantt com barras da baseline | **Aberto** | A comparação é em tabela |
+| P6 | Gantt com barras da baseline | **OK** | Barra fina da baseline mais recente sobre cada atividade, com liga/desliga na tela do cronograma |
 | P7 | Linhas de base múltiplas e comparação | Parcial | Aba **Linha de base**; EVM usa a mais recente (sem escolher qual é a "primária") |
-| P8 | Atualização de progresso | Parcial | Percentual vem do status (0/50/100%); sem % editável nem datas reais |
+| P8 | Atualização de progresso | Parcial | % concluído editável por atividade (vale sobre o status); sem datas reais de início/término |
 | P9 | Recursos e histograma | Parcial | `/pmo/recursos`: carga por responsável (1 pessoa por atividade). Sem tabela de preços, sem nivelamento |
 | P10 | Planilha de custos (orçado, comprometido, realizado, previsão, variação) | OK | Aba **Custos** |
 | P11 | Curva S / fluxo de caixa | OK | Tela de cronograma |
 | P12 | Valor agregado (PV, EV, SPI, CPI, EAC, ETC, VAC, TCPI) | OK | `src/evm`; portfólio e aba Custos; PV/EV medidos contra a baseline mais recente |
-| P13 | Portfólio e priorização | Parcial | `/pmo`: ranking multicritério com pesos fixos na tela; sem mapa de calor nem cenários |
+| P13 | Portfólio e priorização | Parcial | `/pmo`: ranking multicritério com pesos fixos na tela; matriz prioridade × situação do prazo; sem cenários |
 | P14 | Pedidos de mudança com impacto e aprovação | Parcial | Aba **Mudanças**: fluxo e impacto; aprovação por papel (gerente/diretor); **não** usa a tela de Aprovações da app |
-| P15 | Gestão de riscos | **Aberto** | Não implementado |
-| P16 | Códigos de atividade, filtros e layouts, relatórios | **Aberto** | Não implementado |
+| P15 | Gestão de riscos | **OK** | Aba **Riscos**: registro (probabilidade × impacto 1–5, status, responsável, resposta, atividade), matriz 5×5 e coluna de riscos no portfólio; sem análise quantitativa (Monte Carlo) |
+| P16 | Códigos de atividade, filtros e layouts, relatórios | Parcial | Grupo (código de atividade) por atividade, filtro por grupo e exportação CSV do cronograma; sem layouts salvos nem relatórios formatados |
 | P17 | Persistência compartilhada, multiusuário, histórico e auditoria | Parcial | Baseline, custos e mudanças são gravados **com a obra no Odoo** (`x_obras`, campo de notas, mesmo mecanismo das demais informações da obra); outra pessoa enxerga na hora. Conflito simultâneo é **detectado** (quem grava primeiro é avisado), não evitado. **Sem histórico/auditoria** de quem mudou o quê; modelo dedicado no Odoo segue como evolução |
 | P18 | Perfis de acesso | OK | Menu e rotas PMO só para analista, gerente e diretor (`src/lib/rbac.ts`) |
 
