@@ -27,10 +27,31 @@ export interface ActivityPlan {
   deadline?: string;
   /** Código de atividade (grupo), texto livre até 40 caracteres. */
   group?: string;
+  /** Recursos atribuídos (função ou pessoa) com unidades (1 = dedicação integral). Ausente = só o responsável do cadastro, com 1 unidade. */
+  assignments?: ResourceAssignmentPlan[];
+  /** Códigos de atividade definidos pelo usuário: id do tipo (`ActivityCodeType.id`) → valor. */
+  codes?: Record<string, string>;
   /** Data real de início (YYYY-MM-DD). */
   actualStart?: string;
   /** Data real de término (YYYY-MM-DD, inclusive); implica 100% concluído se o % não for informado. */
   actualFinish?: string;
+}
+
+export interface ResourceAssignmentPlan {
+  resource: string;
+  /** Fração de uma pessoa por dia (0,05 a 20). */
+  units: number;
+}
+export const MAX_ASSIGNMENTS = 10;
+export const MAX_CODE_TYPES = 10;
+export const MAX_CODE_VALUES = 50;
+export const MAX_CODE_LENGTH = 40;
+
+/** Tipo de código de atividade (como os códigos de atividade do Primavera): nome e lista fechada de valores. */
+export interface ActivityCodeType {
+  id: string;
+  name: string;
+  values: string[];
 }
 
 export const RISK_STATUSES = ["aberto", "mitigando", "ocorrido", "encerrado"] as const;
@@ -157,6 +178,10 @@ export interface WorkPlanning {
   scenarios: Scenario[];
   /** Questões (issues) da obra. */
   issues: Issue[];
+  /** Capacidade (pessoas por dia) por recurso; ausente = 1. */
+  resourceCapacity: Record<string, number>;
+  /** Tipos de código de atividade definidos para a obra. */
+  codeTypes: ActivityCodeType[];
   /** Programa ou carteira a que o projeto pertence (nível acima do projeto); ausente = sem programa. */
   program?: string;
 }
@@ -219,6 +244,8 @@ export const EMPTY_PLANNING: WorkPlanning = Object.freeze({
   scenarios: [],
   issues: [],
   licenses: [],
+  resourceCapacity: {},
+  codeTypes: [],
 }) as WorkPlanning;
 export const MAX_HOLIDAYS = 400;
 export const MAX_PREDECESSORS = 50;
@@ -331,7 +358,44 @@ function cleanActivityPlan(v: unknown): ActivityPlan | null {
     if (g.length > MAX_GROUP_LENGTH) return null;
     if (g !== "") out.group = g;
   }
+  if (v.assignments !== undefined) {
+    if (!Array.isArray(v.assignments) || v.assignments.length > MAX_ASSIGNMENTS) return null;
+    const list: ResourceAssignmentPlan[] = [];
+    for (const a of v.assignments) {
+      if (!isObj(a) || typeof a.resource !== "string") return null;
+      const resource = a.resource.trim();
+      if (resource === "" || resource.length > 100 || !safeKey(resource) || !isNum(a.units) || a.units < 0.05 || a.units > 20) return null;
+      if (list.some((x) => x.resource === resource)) return null;
+      list.push({ resource, units: Math.round(a.units * 100) / 100 });
+    }
+    if (list.length > 0) out.assignments = list;
+  }
+  if (v.codes !== undefined) {
+    if (!isObj(v.codes) || Object.keys(v.codes).length > MAX_CODE_TYPES) return null;
+    const codes: Record<string, string> = {};
+    for (const [k, x] of Object.entries(v.codes)) {
+      if (!safeKey(k) || k.length > 40 || typeof x !== "string") return null;
+      const t = x.trim();
+      if (t.length > MAX_CODE_LENGTH) return null;
+      if (t !== "") codes[k] = t;
+    }
+    if (Object.keys(codes).length > 0) out.codes = codes;
+  }
   return out;
+}
+
+function cleanCodeType(v: unknown): ActivityCodeType | null {
+  if (!isObj(v) || typeof v.id !== "string" || v.id === "" || v.id.length > 40 || !safeKey(v.id)) return null;
+  const name = optText(v.name, MAX_CODE_LENGTH);
+  if (!name || !Array.isArray(v.values) || v.values.length > MAX_CODE_VALUES) return null;
+  const values: string[] = [];
+  for (const x of v.values) {
+    if (typeof x !== "string") return null;
+    const t = x.trim();
+    if (t.length > MAX_CODE_LENGTH) return null;
+    if (t !== "" && !values.includes(t)) values.push(t);
+  }
+  return { id: v.id, name, values };
 }
 
 const isLevel = (v: unknown): v is number => Number.isInteger(v) && (v as number) >= 1 && (v as number) <= 5;
@@ -508,6 +572,31 @@ export function normalizePlanning(raw: unknown): WorkPlanning {
       if (ap && Object.keys(ap).length > 0) activityPlans[id] = ap;
     }
   }
+  const codeTypes: ActivityCodeType[] = [];
+  if (Array.isArray(raw.codeTypes)) {
+    const seenType = new Set<string>();
+    for (const t of raw.codeTypes.slice(0, MAX_CODE_TYPES)) {
+      const c = cleanCodeType(t);
+      if (c && !seenType.has(c.id)) {
+        seenType.add(c.id);
+        codeTypes.push(c);
+      }
+    }
+  }
+  // Códigos que apontam para tipo ou valor que não existe mais são descartados.
+  for (const [id, ap] of Object.entries(activityPlans)) {
+    if (!ap.codes) continue;
+    const kept = Object.fromEntries(Object.entries(ap.codes).filter(([k, val]) => codeTypes.find((t) => t.id === k)?.values.includes(val)));
+    if (Object.keys(kept).length === 0) {
+      const { codes: _drop, ...rest } = ap;
+      if (Object.keys(rest).length === 0) delete activityPlans[id];
+      else activityPlans[id] = rest;
+    } else ap.codes = kept;
+  }
+  const resourceCapacity: Record<string, number> = {};
+  if (isObj(raw.resourceCapacity)) {
+    for (const [k, v] of Object.entries(raw.resourceCapacity)) if (safeKey(k) && k.length <= 100 && isNum(v) && v > 0 && v <= 100) resourceCapacity[k] = v;
+  }
   const rev = Number.isInteger(raw.rev) && (raw.rev as number) >= 0 ? (raw.rev as number) : 0;
   const risks: Risk[] = [];
   if (Array.isArray(raw.risks)) {
@@ -554,7 +643,7 @@ export function normalizePlanning(raw: unknown): WorkPlanning {
   if (isObj(raw.resourceRates)) {
     for (const [k, v] of Object.entries(raw.resourceRates)) if (safeKey(k) && k.length <= 100 && isMoney(v)) resourceRates[k] = v;
   }
-  const result: WorkPlanning = { rev, baselines, costs, changes, activityPlans, holidays: cleanHolidays(raw.holidays), risks, history: history.slice(-MAX_HISTORY), resourceRates, scenarios: [], issues, licenses };
+  const result: WorkPlanning = { rev, baselines, costs, changes, activityPlans, holidays: cleanHolidays(raw.holidays), risks, history: history.slice(-MAX_HISTORY), resourceRates, scenarios: [], issues, licenses, resourceCapacity, codeTypes };
   const scenarios: Scenario[] = [];
   if (Array.isArray(raw.scenarios)) {
     const seen = new Set<string>();
@@ -641,11 +730,82 @@ export function withActivityPlan(p: WorkPlanning, activityId: string, patch: Act
   const clean = cleanActivityPlan(merged);
   if (clean === null) throw new PmoError("Dados do cronograma da atividade inválidos (duração, percentual, datas — o término real não pode ser antes do início real —, predecessoras ou grupo).");
   if ((clean.predecessors ?? []).some((q) => q.id === activityId)) throw new PmoError("Uma atividade não pode ser predecessora de si mesma.");
+  for (const [k, val] of Object.entries(clean.codes ?? {})) {
+    const t = p.codeTypes.find((x) => x.id === k);
+    if (!t) throw new PmoError("Código de atividade de um tipo que não existe.");
+    if (!t.values.includes(val)) throw new PmoError(`O valor "${val}" não existe no código "${t.name}".`);
+  }
   if (JSON.stringify(clean) === JSON.stringify(p.activityPlans[activityId] ?? {})) return p;
   const activityPlans = { ...p.activityPlans };
   if (Object.keys(clean).length === 0) delete activityPlans[activityId];
   else activityPlans[activityId] = clean;
   return bump(p, { activityPlans });
+}
+
+/** Define (ou remove, com `undefined`) a capacidade de um recurso, em pessoas por dia. */
+export function withResourceCapacity(p: WorkPlanning, resource: string, capacity: number | undefined): WorkPlanning {
+  const name = resource.trim();
+  if (!safeKey(name) || name.length > 100) throw new PmoError("Nome de recurso inválido.");
+  if (capacity !== undefined && !(isNum(capacity) && capacity > 0 && capacity <= 100)) throw new PmoError("A capacidade deve ser maior que zero e até 100.");
+  if (p.resourceCapacity[name] === capacity) return p;
+  const resourceCapacity = { ...p.resourceCapacity };
+  if (capacity === undefined) delete resourceCapacity[name];
+  else resourceCapacity[name] = capacity;
+  return bump(p, { resourceCapacity });
+}
+
+/** Cria ou atualiza (pelo id) um tipo de código de atividade. Ao tirar um valor, os códigos que o usavam são limpos das atividades. */
+export function withCodeType(p: WorkPlanning, type: ActivityCodeType): WorkPlanning {
+  const clean = cleanCodeType(type);
+  if (clean === null) throw new PmoError(`Tipo de código inválido: nome (até ${MAX_CODE_LENGTH} caracteres) e até ${MAX_CODE_VALUES} valores de até ${MAX_CODE_LENGTH} caracteres.`);
+  const i = p.codeTypes.findIndex((t) => t.id === clean.id);
+  if (i < 0 && p.codeTypes.length >= MAX_CODE_TYPES) throw new PmoError(`No máximo ${MAX_CODE_TYPES} tipos de código.`);
+  if (i >= 0 && JSON.stringify(p.codeTypes[i]) === JSON.stringify(clean)) return p;
+  const codeTypes = i < 0 ? [...p.codeTypes, clean] : p.codeTypes.map((t, j) => (j === i ? clean : t));
+  return bump({ ...p, activityPlans: pruneCodes(p.activityPlans, (k, val) => k !== clean.id || clean.values.includes(val)) }, { codeTypes });
+}
+
+export function withoutCodeType(p: WorkPlanning, id: string): WorkPlanning {
+  if (!p.codeTypes.some((t) => t.id === id)) return p;
+  return bump({ ...p, activityPlans: pruneCodes(p.activityPlans, (k) => k !== id) }, { codeTypes: p.codeTypes.filter((t) => t.id !== id) });
+}
+
+function pruneCodes(plans: Record<string, ActivityPlan>, keep: (typeId: string, value: string) => boolean): Record<string, ActivityPlan> {
+  const out: Record<string, ActivityPlan> = {};
+  for (const [id, ap] of Object.entries(plans)) {
+    if (!ap.codes) {
+      out[id] = ap;
+      continue;
+    }
+    const codes = Object.fromEntries(Object.entries(ap.codes).filter(([k, v]) => keep(k, v)));
+    const { codes: _old, ...rest } = ap;
+    const next: ActivityPlan = Object.keys(codes).length > 0 ? { ...rest, codes } : rest;
+    if (Object.keys(next).length > 0) out[id] = next;
+  }
+  return out;
+}
+
+/** Próximo id livre no formato T-1, T-2… */
+export function nextCodeTypeId(p: Pick<WorkPlanning, "codeTypes">): string {
+  const max = p.codeTypes.reduce((m, t) => Math.max(m, Number(/^T-(\d+)$/.exec(t.id)?.[1] ?? 0)), 0);
+  return `T-${max + 1}`;
+}
+
+/** Atribuições efetivas de uma atividade: as do planejamento ou, sem elas, o responsável do cadastro (1 unidade). */
+export function effectiveAssignments(plan: ActivityPlan | undefined, owner: string | undefined): ResourceAssignmentPlan[] {
+  if (plan?.assignments && plan.assignments.length > 0) return plan.assignments;
+  const o = owner?.trim();
+  return o ? [{ resource: o, units: 1 }] : [];
+}
+
+/** Agrupa ids de atividade pelo valor do código `typeId` ("" = sem valor). */
+export function groupByCode(ids: readonly string[], plans: Readonly<Record<string, ActivityPlan>>, typeId: string): Map<string, string[]> {
+  const out = new Map<string, string[]>();
+  for (const id of ids) {
+    const v = (Object.hasOwn(plans, id) ? plans[id]?.codes?.[typeId] : undefined) ?? "";
+    out.set(v, [...(out.get(v) ?? []), id]);
+  }
+  return out;
 }
 
 /** Cria ou atualiza (pelo id) um risco. */
@@ -902,6 +1062,13 @@ export function describePlanningChange(prev: WorkPlanning, next: WorkPlanning): 
   }
   for (const l of prev.licenses) if (!next.licenses.some((x) => x.id === l.id)) out.push(`Processo de licenciamento ${l.id} removido`);
   if (!sameJson(prev.resourceRates, next.resourceRates)) out.push("Diárias de recursos alteradas");
+  if (!sameJson(prev.resourceCapacity, next.resourceCapacity)) out.push("Capacidade de recursos alterada");
+  for (const t of next.codeTypes) {
+    const old = prev.codeTypes.find((x) => x.id === t.id);
+    if (!old) out.push(`Código de atividade criado: ${t.name}`);
+    else if (!sameJson(old, t)) out.push(`Código de atividade atualizado: ${t.name}`);
+  }
+  for (const t of prev.codeTypes) if (!next.codeTypes.some((x) => x.id === t.id)) out.push(`Código de atividade removido: ${t.name}`);
   const cost = keysChanged(prev.costs, next.costs);
   if (cost.length) out.push(`Custos alterados em ${cost.length} atividade(s)`);
   for (const c of next.changes) {
