@@ -137,6 +137,14 @@ export const IMPACT_LABEL: Record<ImpactDimension, string> = {
   social: "Benefício social e comunitário",
 };
 
+/** Objetivos de Desenvolvimento Sustentável (ONU), nomes em português usados no Brasil. */
+export const SDG_LABELS: readonly string[] = [
+  "Erradicação da pobreza", "Fome zero e agricultura sustentável", "Saúde e bem-estar", "Educação de qualidade", "Igualdade de gênero",
+  "Água potável e saneamento", "Energia limpa e acessível", "Trabalho decente e crescimento econômico", "Indústria, inovação e infraestrutura",
+  "Redução das desigualdades", "Cidades e comunidades sustentáveis", "Consumo e produção responsáveis", "Ação contra a mudança global do clima",
+  "Vida na água", "Vida terrestre", "Paz, justiça e instituições eficazes", "Parcerias e meios de implementação",
+];
+
 /** Perfil de impacto socioambiental de um projeto (estimativa do time, não certificação). */
 export interface ImpactState {
   scores: Record<ImpactDimension, number>;
@@ -147,6 +155,12 @@ export interface ImpactState {
   /** Emissões evitadas ou removidas (tCO2e). */
   tco2e?: number;
   notes?: string;
+  /** ODS (1 a 17) a que o projeto contribui, em ordem crescente e sem repetição. */
+  sdgs?: number[];
+  /** Metodologia usada para chegar às notas e metas (ex.: protocolo, norma, laudo). */
+  method?: string;
+  /** Evidência: referência de laudo, relatório ou documento que sustenta os números. */
+  evidence?: string;
 }
 
 /** Índice de impacto 0..1: média das quatro dimensões sobre o máximo (5). */
@@ -365,6 +379,16 @@ export function cleanImpact(v: unknown): ImpactState | null {
   const notes = optText(v.notes, 1000);
   if (notes === null) return null;
   if (notes) out.notes = notes;
+  if (v.sdgs !== undefined) {
+    if (!Array.isArray(v.sdgs) || v.sdgs.length > SDG_LABELS.length || !v.sdgs.every((n) => Number.isInteger(n) && n >= 1 && n <= SDG_LABELS.length)) return null;
+    const uniq = [...new Set(v.sdgs as number[])].sort((a, b) => a - b);
+    if (uniq.length > 0) out.sdgs = uniq;
+  }
+  for (const [k, max] of [["method", 300], ["evidence", 500]] as const) {
+    const t = optText(v[k], max);
+    if (t === null) return null;
+    if (t) out[k] = t;
+  }
   return out;
 }
 

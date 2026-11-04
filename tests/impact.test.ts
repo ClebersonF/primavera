@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_PRIORITY_WEIGHTS, EMPTY_PLANNING, IMPACT_DIMENSIONS, PRIORITY_PRESETS, PmoError, describePlanningChange, impactIndex, normalizePlanning, prioritizePortfolio, withImpact } from "../src";
+import { DEFAULT_PRIORITY_WEIGHTS, EMPTY_PLANNING, IMPACT_DIMENSIONS, SDG_LABELS, PRIORITY_PRESETS, PmoError, describePlanningChange, impactIndex, normalizePlanning, prioritizePortfolio, withImpact } from "../src";
 
 const sc = (n: number) => ({ ecological: n, climate: n, water: n, social: n });
 const item = (id: string, impact: number | null | undefined, extra = {}) => ({ id, name: id, nature: "improvement" as const, budget: 1000, spi: 1, daysToDeadline: 60, impact, ...extra });
@@ -35,5 +35,22 @@ describe("impacto socioambiental", () => {
     const r = prioritizePortfolio([item("a", undefined)], { nature: 1, schedule: 1, deadline: 1, budget: 1 });
     expect(Number.isFinite(r[0]!.score)).toBe(true);
     expect(() => prioritizePortfolio([item("a", 0.5)], { nature: 0, schedule: 0, deadline: 0, budget: 0, impact: 0 })).toThrow(PmoError);
+  });
+});
+
+describe("ODS, metodologia e evidência", () => {
+  const base = { scores: sc(3) };
+  it("normaliza ODS (ordem, sem repetição) e textos", () => {
+    const p = withImpact(EMPTY_PLANNING, { ...base, sdgs: [15, 6, 15, 13], method: " Protocolo X ", evidence: "Laudo 12/2026" });
+    expect(p.impact).toEqual({ ...base, sdgs: [6, 13, 15], method: "Protocolo X", evidence: "Laudo 12/2026" });
+    expect(normalizePlanning(JSON.parse(JSON.stringify(p))).impact).toEqual(p.impact);
+    expect(withImpact(EMPTY_PLANNING, { ...base, sdgs: [] }).impact).toEqual(base);
+  });
+  it("recusa ODS fora de 1–17 e textos longos", () => {
+    expect(() => withImpact(EMPTY_PLANNING, { ...base, sdgs: [0] })).toThrow(PmoError);
+    expect(() => withImpact(EMPTY_PLANNING, { ...base, sdgs: [18] })).toThrow(PmoError);
+    expect(() => withImpact(EMPTY_PLANNING, { ...base, sdgs: [1.5] })).toThrow(PmoError);
+    expect(() => withImpact(EMPTY_PLANNING, { ...base, method: "x".repeat(301) })).toThrow(PmoError);
+    expect(SDG_LABELS).toHaveLength(17);
   });
 });
