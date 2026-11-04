@@ -62,7 +62,7 @@ Atualizado em 04/11/2026. Legenda: **OK** atendido e validado · **Parcial** ate
 | P13 | Portfólio e priorização | Parcial | `/pmo`: ranking multicritério com **estratégia escolhida na tela** (preset Operacional ou Impacto socioambiental/CALM, ou pesos personalizados guardados no navegador de quem escolheu); matriz prioridade × situação do prazo; **cenários "e se"** por obra. Sem cenários de portfólio e sem pesos compartilhados entre usuários |
 | P14 | Pedidos de mudança com impacto e aprovação | Parcial | Aba **Mudanças**: fluxo e impacto; aprovação por papel (gerente/diretor); **não** usa a tela de Aprovações da app |
 | P15 | Gestão de riscos | **OK** | Aba **Riscos**: registro (probabilidade × impacto 1–5, status, responsável, resposta, atividade), matriz 5×5 e coluna de riscos no portfólio; sem análise quantitativa (Monte Carlo) |
-| P16 | Códigos de atividade, filtros e layouts, relatórios | Parcial | Grupo (código de atividade) por atividade, filtro por grupo e exportação CSV do cronograma; sem layouts salvos nem relatórios formatados |
+| P16 | Códigos de atividade, filtros e layouts, relatórios | Parcial | Grupo (código de atividade) por atividade, filtro por grupo; **CSV do cronograma** e **CSV do relatório do portfólio** (ranking, EVM, riscos, impacto, ODS). Sem layouts salvos nem relatório formatado/PDF |
 | P17 | Persistência compartilhada, multiusuário, histórico e auditoria | Parcial | Baseline, custos e mudanças são gravados **com a obra no Odoo** (`x_obras`, campo de notas, mesmo mecanismo das demais informações da obra); outra pessoa enxerga na hora. Conflito simultâneo é **detectado** (quem grava primeiro é avisado), não evitado. **Histórico de alterações** (quem, quando, o quê; últimas 300) na aba Histórico; modelo dedicado no Odoo segue como evolução |
 | P18 | Perfis de acesso | OK | Menu e rotas PMO só para analista, gerente e diretor (`src/lib/rbac.ts`) |
 
@@ -74,7 +74,7 @@ Atualizado em 04/11/2026. Legenda: **OK** atendido e validado · **Parcial** ate
 | E2 | Registrar impacto por projeto (biodiversidade, clima, água/solo, social; hectares, pessoas, tCO2e) | OK | Aba **Impacto** do planejamento; gravado com a obra; entra no histórico |
 | E3 | Priorizar o portfólio pela estratégia | OK | Seletor de estratégia e pesos na tela `/pmo`; padrão Operacional ignora impacto; preset CALM pesa impacto 45% |
 | E4 | Totais de impacto do portfólio e aviso de projetos não avaliados | OK | Cartões em `/pmo`; fator ausente vale neutro e é marcado com "*" |
-| E5 | Rigor dos números de impacto (inventário de carbono, certificação, ODS/ESG) | **Aberto** | São estimativas do time, sem metodologia, sem evidência anexada e sem mapeamento para ODS/GRI. Definir a metodologia da CALM antes de divulgar qualquer número |
+| E5 | Rigor dos números de impacto (metodologia, evidência, ODS) | Parcial | Aba Impacto tem **ODS (1–17)**, **metodologia** e **evidência** (texto); o portfólio mostra projetos por ODS e avisa os que têm impacto sem metodologia; o CSV leva tudo. Continua sem validação externa, sem anexo de arquivo, sem inventário de carbono nem mapeamento GRI. A metodologia em si precisa ser definida pela CALM |
 | E6 | Pesos da estratégia compartilhados pela equipe | **Aberto** | Pesos personalizados ficam só no navegador; os presets são iguais para todos. Compartilhar exige gravar em local central (Odoo) |
 | E7 | Licenciamento ambiental (GRAPROHAB/CETESB) por projeto | Parcial | Ver seção 3 (G7) |
 
@@ -87,7 +87,7 @@ Cobertura real hoje: motor de cronograma e valor agregado completo; planejamento
 | Estrutura corporativa (EPS) e organizacional (OBS) | P6 (doc. lida) | **Não há** | A app tem lista plana de obras; sem programas/carteiras hierárquicas nem responsabilidades por nó |
 | Atribuição de recursos e funções (unidades, curvas, calendário de recurso) | P6 (doc. lida) | Parcial | 1 responsável por atividade, diária e nivelamento sugerido; sem funções, unidades nem calendário de recurso |
 | Códigos de atividade e campos definidos pelo usuário | P6 (doc. lida) | Parcial | Um código ("Grupo") por atividade; sem campos próprios e sem hierarquia de códigos |
-| Layouts, filtros salvos e assistente de relatórios | P6 (doc. lida) | Parcial | Filtro por grupo e CSV; sem layouts salvos nem relatório formatado |
+| Layouts, filtros salvos e assistente de relatórios | P6 (doc. lida) | Parcial | Filtro por grupo e dois CSVs (cronograma e portfólio); sem layouts salvos nem relatório formatado |
 | Limiares (management by threshold), questões (issues) | P6 (doc. lida) | **Não há** | Riscos existem; questões e alertas por limiar, não |
 | Produtos de trabalho e documentos por atividade | P6 (doc. lida) | **Não há** | A app tem módulo de documentos geral, sem vínculo com a atividade do planejamento |
 | Visualizador de lógica (diagrama de rede) | P6 (doc. lida) | **Não há** | Só Gantt |
