@@ -4,6 +4,7 @@ export {
   isWorkDay,
   toCalendarDates,
   workDayAt,
+  workDayDates,
   workDaysBetween,
   type DatedActivity,
   type WorkCalendar,

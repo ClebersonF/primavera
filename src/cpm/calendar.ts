@@ -69,6 +69,12 @@ function workDays(projectStart: string, count: number, cal: WorkCalendar): strin
   return out;
 }
 
+/** Datas das `count` primeiras jornadas úteis a partir de `projectStart` (inclusive). */
+export function workDayDates(projectStart: string, count: number, cal: WorkCalendar = DEFAULT_CALENDAR): string[] {
+  if (!Number.isInteger(count) || count < 0 || count > 40_000) throw new CpmError(`Quantidade de dias inválida: ${count}`);
+  return workDays(projectStart, count, cal);
+}
+
 /** Data do `offset`-ésimo dia útil (0 = primeiro dia útil em ou depois de `projectStart`). */
 export function workDayAt(
   projectStart: string,

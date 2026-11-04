@@ -95,7 +95,7 @@ Cobertura real hoje: motor de cronograma e valor agregado completo; planejamento
 | Mudança global, passos de atividade, restrições obrigatórias | não confirmado na doc. lida | **Não há** (restrição "terminar até" existe) | Conhecimento geral do produto; confirmar na doc. completa |
 | Planilha de custos ligada a contratos, compromissos e pagamentos | Unifier (doc. lida) | Parcial | Aba Custos por atividade (orçado, comprometido, realizado, previsão); sem contratos nem pagamentos ligados |
 | Processos de negócio e fluxos configuráveis | Unifier (doc. lida) | Parcial | Fluxo fixo de pedidos de mudança com aprovação por papel; sem construtor de fluxo e fora da tela de Aprovações da app |
-| Fluxo de caixa por cronograma, projeto e portfólio | Unifier (doc. lida) | Parcial | Curva S por obra; sem consolidação de portfólio |
+| Fluxo de caixa por cronograma, projeto e portfólio | Unifier (doc. lida) | Parcial | Curva S por obra e fluxo mensal consolidado do portfólio e por programa (previsto × realizado, CSV); o realizado é distribuído por premissa, sem lançamentos de caixa reais |
 | Previsão contra a linha de base, painéis e relatórios | Unifier (doc. lida) | Parcial | EVM, EAC/ETC e painel de portfólio; sem biblioteca de relatórios |
 | Assinatura digital e revisão de documentos | Unifier (doc. lida) | Fora de escopo | Existe fluxo próprio de assinatura em OS |
 | Ordens de mudança que atualizam contrato e planilha de custos | Unifier (doc. lida) | Parcial | Mudança aprovada altera prazo/EVM; não altera contrato |
