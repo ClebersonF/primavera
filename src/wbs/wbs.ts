@@ -12,6 +12,8 @@ export interface WbsNodeInput {
   /** Somente em folhas; devem apontar para folhas. */
   predecessors?: Predecessor[];
   startNoEarlierThan?: number;
+  /** Somente em folhas. Início obrigatório (offset em dias úteis); ver `CpmActivity.mandatoryStart`. */
+  mandatoryStart?: number;
   /** Somente em folhas. Custo planejado em BRL. */
   plannedCost?: number;
   /** Somente em folhas. Progresso físico, 0..100. */
@@ -111,6 +113,7 @@ export function planWbs(inputs: readonly WbsNodeInput[]): WbsPlan {
         n.duration !== undefined ||
         (n.predecessors?.length ?? 0) > 0 ||
         n.startNoEarlierThan !== undefined ||
+        n.mandatoryStart !== undefined ||
         n.plannedCost !== undefined ||
         n.percentComplete !== undefined;
       if (bad) {
@@ -125,6 +128,7 @@ export function planWbs(inputs: readonly WbsNodeInput[]): WbsPlan {
     duration: n.duration!,
     predecessors: n.predecessors,
     startNoEarlierThan: n.startNoEarlierThan,
+    mandatoryStart: n.mandatoryStart,
   }));
   const cpm = scheduleCpm(cpmInput);
   const sched = new Map(cpm.activities.map((a) => [a.id, a]));

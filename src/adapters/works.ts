@@ -24,6 +24,8 @@ export interface ActivityLike {
   percentComplete?: number;
   /** "Não iniciar antes de" (YYYY-MM-DD). */
   notBefore?: string;
+  /** Restrição obrigatória: a atividade começa (ou termina, no último dia) na data, mesmo que as predecessoras digam outra coisa. */
+  constraint?: { kind: "iniciar_em" | "terminar_em"; date: string };
   /** "Terminar até" (YYYY-MM-DD); só gera alerta, não move a atividade. */
   deadline?: string;
   /** Datas reais (YYYY-MM-DD); o término real conta como 100% quando não há % informado. */
@@ -134,11 +136,23 @@ export function workToWbsInputs(
       const offset = workDaysBetween(startDate, dateOnly(a.notBefore), cal);
       if (offset > 0) startNoEarlierThan = offset;
     }
+    let mandatoryStart: number | undefined;
+    if (a.constraint !== undefined) {
+      const d = dateOnly(a.constraint.date);
+      if (d < startDate) {
+        assumptions.push(`"${a.title}": a restrição obrigatória é anterior ao início da obra e foi ignorada.`);
+      } else {
+        const offset = a.constraint.kind === "iniciar_em" ? workDaysBetween(startDate, d, cal) : workDaysBetween(startDate, addDaysIso(d, 1), cal) - durations[i]!;
+        if (offset < 0) assumptions.push(`"${a.title}": o término obrigatório deixaria o início antes da obra; restrição ignorada.`);
+        else mandatoryStart = offset;
+      }
+    }
     return {
       id: a.id,
       parentId: rootId,
       name: a.title,
       duration: durations[i]!,
+      mandatoryStart,
       plannedCost: costs[i]!,
       percentComplete: a.percentComplete ?? (a.actualFinish !== undefined ? 100 : PERCENT[a.status]),
       predecessors,

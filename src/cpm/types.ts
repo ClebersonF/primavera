@@ -26,6 +26,11 @@ export interface CpmActivity {
   predecessors?: Predecessor[];
   /** "Não iniciar antes de" (offset em dias úteis, >= 0). */
   startNoEarlierThan?: number;
+  /**
+   * Início obrigatório (offset em dias úteis, >= 0): prevalece sobre os vínculos com as predecessoras
+   * (que podem ficar violados) e fixa a atividade (folga zero), como a restrição mandatória do Primavera.
+   */
+  mandatoryStart?: number;
 }
 
 export interface ScheduledActivity {

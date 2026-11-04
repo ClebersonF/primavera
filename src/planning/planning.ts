@@ -3,7 +3,7 @@ import type { Baseline } from "../baseline/baseline";
 import { transitionChange, type ChangeRequest, type ChangeStatus } from "../changes/changeRequest";
 import { DEFAULT_CALENDAR, type WorkCalendar } from "../cpm/calendar";
 import { LINK_TYPES, type LinkType } from "../cpm/types";
-import { parseIsoDate } from "../dates";
+import { addDaysIso, parseIsoDate } from "../dates";
 import { PmoError } from "../errors";
 import { MAX_SCENARIOS, validateScenario, type Scenario } from "../scenarios/scenario";
 import { assessCbs, splitInvoice, type CbsAssessment, type Purchase, type PurchaseCategory } from "../tax/cbs";
@@ -28,6 +28,12 @@ export interface ActivityPlan {
   deadline?: string;
   /** Código de atividade (grupo), texto livre até 40 caracteres. */
   group?: string;
+  /** Restrição obrigatória: a atividade começa ou termina na data, prevalecendo sobre as predecessoras. */
+  constraint?: { kind: "iniciar_em" | "terminar_em"; date: string };
+  /** Passos da atividade, com peso; sem % informado, o avanço é a soma dos pesos concluídos. */
+  steps?: ActivityStep[];
+  /** Documentos e produtos de trabalho ligados à atividade. */
+  documents?: ActivityDocument[];
   /** Recursos atribuídos (função ou pessoa) com unidades (1 = dedicação integral). Ausente = só o responsável do cadastro, com 1 unidade. */
   assignments?: ResourceAssignmentPlan[];
   /** Códigos de atividade definidos pelo usuário: id do tipo (`ActivityCodeType.id`) → valor. */
@@ -36,6 +42,36 @@ export interface ActivityPlan {
   actualStart?: string;
   /** Data real de término (YYYY-MM-DD, inclusive); implica 100% concluído se o % não for informado. */
   actualFinish?: string;
+}
+
+export interface ActivityStep {
+  title: string;
+  done: boolean;
+  /** Peso relativo, 1 a 100. */
+  weight: number;
+}
+export const DOCUMENT_KINDS = ["documento", "produto", "evidencia", "licenca"] as const;
+export type DocumentKind = (typeof DOCUMENT_KINDS)[number];
+export const DOCUMENT_STATUSES = ["pendente", "entregue", "aprovado"] as const;
+export type DocumentStatus = (typeof DOCUMENT_STATUSES)[number];
+/** Documento ou produto de trabalho de uma atividade (como os "work products and documents" do Primavera). */
+export interface ActivityDocument {
+  name: string;
+  kind: DocumentKind;
+  status: DocumentStatus;
+  /** Endereço http(s) do arquivo, quando houver. */
+  url?: string;
+}
+export const MAX_STEPS = 30;
+export const MAX_DOCUMENTS = 20;
+
+/** Avanço pelos passos (0..100, uma casa); null sem passos. */
+export function stepsPercent(steps: readonly ActivityStep[] | undefined): number | null {
+  if (!steps || steps.length === 0) return null;
+  const total = steps.reduce((s, x) => s + x.weight, 0);
+  if (total <= 0) return null;
+  const done = steps.reduce((s, x) => s + (x.done ? x.weight : 0), 0);
+  return Math.round((done / total) * 1000) / 10;
 }
 
 export interface ResourceAssignmentPlan {
@@ -366,6 +402,38 @@ function cleanActivityPlan(v: unknown): ActivityPlan | null {
     const g = v.group.trim();
     if (g.length > MAX_GROUP_LENGTH) return null;
     if (g !== "") out.group = g;
+  }
+  if (v.constraint !== undefined) {
+    if (!isObj(v.constraint) || (v.constraint.kind !== "iniciar_em" && v.constraint.kind !== "terminar_em") || !validDate(v.constraint.date)) return null;
+    out.constraint = { kind: v.constraint.kind, date: v.constraint.date };
+  }
+  if (v.steps !== undefined) {
+    if (!Array.isArray(v.steps) || v.steps.length > MAX_STEPS) return null;
+    const steps: ActivityStep[] = [];
+    for (const x of v.steps) {
+      if (!isObj(x) || typeof x.done !== "boolean") return null;
+      const title = optText(x.title, 120);
+      if (!title || !(isNum(x.weight) && x.weight >= 1 && x.weight <= 100)) return null;
+      steps.push({ title, done: x.done, weight: Math.round(x.weight * 100) / 100 });
+    }
+    if (steps.length > 0) out.steps = steps;
+  }
+  if (v.documents !== undefined) {
+    if (!Array.isArray(v.documents) || v.documents.length > MAX_DOCUMENTS) return null;
+    const docs: ActivityDocument[] = [];
+    for (const x of v.documents) {
+      if (!isObj(x)) return null;
+      const name = optText(x.name, 120);
+      const url = optText(x.url, 500);
+      if (!name || url === null) return null;
+      if (typeof x.kind !== "string" || !(DOCUMENT_KINDS as readonly string[]).includes(x.kind)) return null;
+      if (typeof x.status !== "string" || !(DOCUMENT_STATUSES as readonly string[]).includes(x.status)) return null;
+      if (url !== undefined && !/^https?:\/\/[^\s]+$/i.test(url)) return null;
+      const d: ActivityDocument = { name, kind: x.kind as DocumentKind, status: x.status as DocumentStatus };
+      if (url) d.url = url;
+      docs.push(d);
+    }
+    if (docs.length > 0) out.documents = docs;
   }
   if (v.assignments !== undefined) {
     if (!Array.isArray(v.assignments) || v.assignments.length > MAX_ASSIGNMENTS) return null;
@@ -888,6 +956,48 @@ export function groupByCode(ids: readonly string[], plans: Readonly<Record<strin
   return out;
 }
 
+export interface GlobalChange {
+  /** Soma de dias úteis à duração de cada atividade (pode ser negativa; mínimo final 0). */
+  durationDelta?: number;
+  /** Multiplica a duração (0,1 a 10), arredondando; aplicado antes do delta. */
+  durationFactor?: number;
+  /** Define o código (grupo). */
+  group?: string;
+  /** Define o valor de um código de atividade definido pelo usuário. */
+  code?: { typeId: string; value: string };
+  /** "Terminar até" desloca em dias corridos as datas já definidas (ignora atividades sem prazo). */
+  deadlineShiftDays?: number;
+  /** Define "Não iniciar antes de". */
+  notBefore?: string;
+  /** Define o prazo "Terminar até". */
+  deadline?: string;
+}
+
+/** Mudança global (como no Primavera): aplica uma operação a várias atividades de uma vez, tudo ou nada. */
+export function applyGlobalChange(p: WorkPlanning, targets: readonly { id: string; duration: number }[], change: GlobalChange): WorkPlanning {
+  if (targets.length === 0) throw new PmoError("Escolha ao menos uma atividade.");
+  if (change.durationFactor !== undefined && !(isNum(change.durationFactor) && change.durationFactor >= 0.1 && change.durationFactor <= 10)) throw new PmoError("O fator de duração deve ficar entre 0,1 e 10.");
+  if (change.durationDelta !== undefined && !Number.isInteger(change.durationDelta)) throw new PmoError("O ajuste de duração deve ser inteiro.");
+  if (change.deadlineShiftDays !== undefined && !Number.isInteger(change.deadlineShiftDays)) throw new PmoError("O deslocamento de prazo deve ser inteiro (dias corridos).");
+  if (Object.values(change).every((v) => v === undefined)) throw new PmoError("Informe ao menos uma alteração.");
+  let next = p;
+  for (const t of targets) {
+    const patch: ActivityPlan = {};
+    if (change.durationFactor !== undefined || change.durationDelta !== undefined) {
+      const base = next.activityPlans[t.id]?.durationDays ?? t.duration;
+      patch.durationDays = Math.max(0, Math.round(base * (change.durationFactor ?? 1)) + (change.durationDelta ?? 0));
+    }
+    if (change.group !== undefined) patch.group = change.group;
+    if (change.notBefore !== undefined) patch.notBefore = change.notBefore;
+    if (change.deadline !== undefined) patch.deadline = change.deadline;
+    const curDeadline = next.activityPlans[t.id]?.deadline;
+    if (change.deadlineShiftDays !== undefined && curDeadline !== undefined) patch.deadline = addDaysIso(curDeadline, change.deadlineShiftDays);
+    if (change.code) patch.codes = { ...(next.activityPlans[t.id]?.codes ?? {}), [change.code.typeId]: change.code.value };
+    next = withActivityPlan(next, t.id, patch);
+  }
+  return next;
+}
+
 /** Cria ou atualiza (pelo id) um risco. */
 export function withRisk(p: WorkPlanning, risk: Risk): WorkPlanning {
   const clean = cleanRisk(risk);
@@ -1090,7 +1200,12 @@ export function mergeActivityPlans<T extends { id: string }>(
 ): (T & ActivityPlan)[] {
   return activities.map((a) => {
     const ap = plans && Object.hasOwn(plans, a.id) ? plans[a.id] : undefined;
-    return ap ? { ...a, ...ap } : { ...a };
+    if (!ap) return { ...a };
+    const merged = { ...a, ...ap };
+    // Passos definem o avanço quando não há % nem término real informados.
+    const sp = stepsPercent(ap.steps);
+    if (sp !== null && ap.percentComplete === undefined && ap.actualFinish === undefined) merged.percentComplete = sp;
+    return merged;
   });
 }
 

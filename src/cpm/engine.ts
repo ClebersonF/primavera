@@ -20,6 +20,7 @@ interface Node {
   id: string;
   duration: number;
   snet: number;
+  mand: number | null;
   es: number;
   ef: number;
   ls: number;
@@ -94,7 +95,8 @@ export function scheduleCpm(input: readonly CpmActivity[]): CpmResult {
     assertInt(a.duration, `Duração da atividade ${a.id}`, 0);
     const snet = a.startNoEarlierThan ?? 0;
     assertInt(snet, `startNoEarlierThan da atividade ${a.id}`, 0);
-    nodes.set(a.id, { id: a.id, duration: a.duration, snet, es: 0, ef: 0, ls: 0, lf: 0 });
+    if (a.mandatoryStart !== undefined) assertInt(a.mandatoryStart, `mandatoryStart da atividade ${a.id}`, 0);
+    nodes.set(a.id, { id: a.id, duration: a.duration, snet, mand: a.mandatoryStart ?? null, es: 0, ef: 0, ls: 0, lf: 0 });
   }
 
   const links: Link[] = [];
@@ -151,8 +153,11 @@ export function scheduleCpm(input: readonly CpmActivity[]): CpmResult {
   for (const id of order) {
     const n = nodes.get(id)!;
     let es = Math.max(0, n.snet);
-    for (const l of incoming.get(id)!) {
-      es = Math.max(es, minStart(l, nodes.get(l.from)!, n.duration));
+    if (n.mand !== null) es = n.mand;
+    else {
+      for (const l of incoming.get(id)!) {
+        es = Math.max(es, minStart(l, nodes.get(l.from)!, n.duration));
+      }
     }
     n.es = es;
     n.ef = es + n.duration;
@@ -166,6 +171,7 @@ export function scheduleCpm(input: readonly CpmActivity[]): CpmResult {
     for (const l of outgoing.get(n.id)!) {
       lf = Math.min(lf, maxFinish(l, nodes.get(l.to)!, n.duration));
     }
+    if (n.mand !== null) lf = n.ef; // fixa: o início mais tarde é o próprio início obrigatório
     n.lf = lf;
     n.ls = lf - n.duration;
   }
