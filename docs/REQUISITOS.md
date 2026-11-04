@@ -84,11 +84,11 @@ Cobertura real hoje: motor de cronograma e valor agregado completo; planejamento
 
 | Função do Primavera | Fonte | Situação na app | Observação |
 |---|---|---|---|
-| Estrutura corporativa (EPS) e organizacional (OBS) | P6 (doc. lida) | **Não há** | A app tem lista plana de obras; sem programas/carteiras hierárquicas nem responsabilidades por nó |
+| Estrutura corporativa (EPS) e organizacional (OBS) | P6 (doc. lida) | Parcial | Um nível de programa/carteira acima do projeto, com consolidação no portfólio (orçamento, SPI, impacto, alertas); sem árvore de vários níveis nem responsabilidades por nó (OBS) |
 | Atribuição de recursos e funções (unidades, curvas, calendário de recurso) | P6 (doc. lida) | Parcial | 1 responsável por atividade, diária e nivelamento sugerido; sem funções, unidades nem calendário de recurso |
 | Códigos de atividade e campos definidos pelo usuário | P6 (doc. lida) | Parcial | Um código ("Grupo") por atividade; sem campos próprios e sem hierarquia de códigos |
-| Layouts, filtros salvos e assistente de relatórios | P6 (doc. lida) | Parcial | Filtro por grupo e dois CSVs (cronograma e portfólio); sem layouts salvos nem relatório formatado |
-| Limiares (management by threshold), questões (issues) | P6 (doc. lida) | **Não há** | Riscos existem; questões e alertas por limiar, não |
+| Layouts, filtros salvos e assistente de relatórios | P6 (doc. lida) | Parcial | Filtro por grupo, dois CSVs e impressão/PDF do portfólio com a identidade da marca; sem layouts salvos nem assistente de relatórios |
+| Limiares (management by threshold), questões (issues) | P6 (doc. lida) | Parcial | Questões com responsável e prazo por obra; alertas por limiar (SPI, CPI, prazo, riscos, questões vencidas) no portfólio, com limiares padrão fixos (não editáveis na tela) |
 | Produtos de trabalho e documentos por atividade | P6 (doc. lida) | **Não há** | A app tem módulo de documentos geral, sem vínculo com a atividade do planejamento |
 | Visualizador de lógica (diagrama de rede) | P6 (doc. lida) | **Não há** | Só Gantt |
 | Cópia de projeto e what-if entre projetos | não confirmado na doc. lida | Parcial | Cenários por obra; sem cenário de portfólio |
