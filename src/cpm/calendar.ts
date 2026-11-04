@@ -38,6 +38,22 @@ export function isWorkDay(date: string, cal: WorkCalendar = DEFAULT_CALENDAR): b
   return cal.workWeekdays.includes(new Date(t).getUTCDay()) && !cal.holidays.includes(date);
 }
 
+/** Quantidade de dias úteis em [from, to). Zero se `to` não vier depois de `from`. */
+export function workDaysBetween(from: string, to: string, cal: WorkCalendar = DEFAULT_CALENDAR): number {
+  assertCalendar(cal);
+  const start = parseIso(from);
+  const end = parseIso(to);
+  if (end <= start) return 0;
+  if ((end - start) / DAY_MS > 36_500) throw new CpmError("Intervalo maior que 100 anos");
+  const holidays = new Set(cal.holidays);
+  const week = new Set(cal.workWeekdays);
+  let count = 0;
+  for (let t = start; t < end; t += DAY_MS) {
+    if (week.has(new Date(t).getUTCDay()) && !holidays.has(toIso(t))) count++;
+  }
+  return count;
+}
+
 /** Lista as `count` primeiras datas úteis a partir de `projectStart` (inclusive). */
 function workDays(projectStart: string, count: number, cal: WorkCalendar): string[] {
   assertCalendar(cal);

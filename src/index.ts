@@ -26,5 +26,6 @@ export {
   type ChangeRequest,
   type ChangeStatus,
 } from "./changes/changeRequest";
+export { workToWbsInputs, type ActivityLike, type WorkLike, type WorkSchedule } from "./adapters/works";
 export * from "./tax/cbs";
 export * from "./licensing/graprohab";
