@@ -121,9 +121,42 @@ export interface WorkPlanning {
   licensing?: LicensingState;
   /** CBS da obra (ausente até ser preenchido). */
   tax?: TaxState;
+  /** Impacto socioambiental do projeto (ausente até ser preenchido). */
+  impact?: ImpactState;
   /** Cenários "e se" salvos (não alteram o plano). */
   scenarios: Scenario[];
 }
+
+/** Dimensões do impacto socioambiental, cada uma de 0 (nenhum) a 5 (muito alto). */
+export const IMPACT_DIMENSIONS = ["ecological", "climate", "water", "social"] as const;
+export type ImpactDimension = (typeof IMPACT_DIMENSIONS)[number];
+export const IMPACT_LABEL: Record<ImpactDimension, string> = {
+  ecological: "Biodiversidade e recuperação ambiental",
+  climate: "Clima (redução ou remoção de emissões)",
+  water: "Recursos hídricos e solo",
+  social: "Benefício social e comunitário",
+};
+
+/** Perfil de impacto socioambiental de um projeto (estimativa do time, não certificação). */
+export interface ImpactState {
+  scores: Record<ImpactDimension, number>;
+  /** Área recuperada ou protegida (hectares). */
+  hectares?: number;
+  /** Pessoas beneficiadas diretamente. */
+  beneficiaries?: number;
+  /** Emissões evitadas ou removidas (tCO2e). */
+  tco2e?: number;
+  notes?: string;
+}
+
+/** Índice de impacto 0..1: média das quatro dimensões sobre o máximo (5). */
+export function impactIndex(s: Pick<ImpactState, "scores"> | undefined): number | null {
+  if (!s) return null;
+  const sum = IMPACT_DIMENSIONS.reduce((a, d) => a + s.scores[d], 0);
+  return Math.round((sum / (IMPACT_DIMENSIONS.length * 5)) * 1000) / 1000;
+}
+
+export const EMPTY_IMPACT: ImpactState = Object.freeze({ scores: Object.freeze({ ecological: 0, climate: 0, water: 0, social: 0 }) }) as ImpactState;
 
 export const EMPTY_PLANNING: WorkPlanning = Object.freeze({
   rev: 0,
@@ -314,6 +347,27 @@ export function cleanLicensing(v: unknown): LicensingState | null {
 }
 
 /** Valida o estado de CBS; devolve null se algum campo for inválido. */
+export function cleanImpact(v: unknown): ImpactState | null {
+  if (!isObj(v) || !isObj(v.scores)) return null;
+  const scores = {} as Record<ImpactDimension, number>;
+  for (const d of IMPACT_DIMENSIONS) {
+    const x = v.scores[d];
+    if (!(Number.isInteger(x) && (x as number) >= 0 && (x as number) <= 5)) return null;
+    scores[d] = x as number;
+  }
+  const out: ImpactState = { scores };
+  for (const k of ["hectares", "beneficiaries", "tco2e"] as const) {
+    if (v[k] !== undefined) {
+      if (!(isNum(v[k]) && (v[k] as number) >= 0 && (v[k] as number) <= 1e12)) return null;
+      out[k] = v[k] as number;
+    }
+  }
+  const notes = optText(v.notes, 1000);
+  if (notes === null) return null;
+  if (notes) out.notes = notes;
+  return out;
+}
+
 export function cleanTax(v: unknown): TaxState | null {
   if (!isObj(v) || !isNum(v.engineeringShare) || v.engineeringShare < 0 || v.engineeringShare > 1) return null;
   if (!Array.isArray(v.purchases) || v.purchases.length > MAX_TAX_PURCHASES) return null;
@@ -413,6 +467,8 @@ export function normalizePlanning(raw: unknown): WorkPlanning {
   if (tax) result.tax = tax;
   const licensing = raw.licensing === undefined ? null : cleanLicensing(raw.licensing);
   if (licensing) result.licensing = licensing;
+  const impact = raw.impact === undefined ? null : cleanImpact(raw.impact);
+  if (impact) result.impact = impact;
   if (Number.isInteger(raw.primaryBaseline) && (raw.primaryBaseline as number) >= 0 && (raw.primaryBaseline as number) < baselines.length) {
     result.primaryBaseline = raw.primaryBaseline as number;
   }
@@ -574,6 +630,14 @@ export function assessWorkCbs(budget: number, state: TaxState = EMPTY_TAX): { as
 }
 
 /** Cria ou atualiza (pelo id) um cenário "e se". */
+/** Grava o impacto socioambiental do projeto. */
+export function withImpact(p: WorkPlanning, state: ImpactState): WorkPlanning {
+  const clean = cleanImpact(state);
+  if (clean === null) throw new PmoError("Impacto inválido: notas de 0 a 5 em cada dimensão e valores numéricos não negativos.");
+  if (JSON.stringify(clean) === JSON.stringify(p.impact)) return p;
+  return bump(p, { impact: clean });
+}
+
 export function withScenario(p: WorkPlanning, sc: Scenario): WorkPlanning {
   validateScenario(sc);
   if (!safeKey(sc.id)) throw new PmoError("Id de cenário inválido.");
@@ -655,6 +719,7 @@ export function describePlanningChange(prev: WorkPlanning, next: WorkPlanning): 
   if (prev.primaryBaseline !== next.primaryBaseline) out.push(next.primaryBaseline === undefined ? "Linha de base primária: a mais recente" : `Linha de base primária: ${next.baselines[next.primaryBaseline]?.name ?? ""}`);
   for (const sc of next.scenarios) if (!prev.scenarios.some((x) => x.id === sc.id)) out.push(`Cenário ${sc.id} criado: ${sc.name}`);
   for (const sc of prev.scenarios) if (!next.scenarios.some((x) => x.id === sc.id)) out.push(`Cenário ${sc.id} removido`);
+  if (!sameJson(prev.impact, next.impact)) out.push("Impacto socioambiental atualizado");
   if (!sameJson(prev.tax, next.tax)) out.push("CBS da obra atualizada");
   if (!sameJson(prev.licensing, next.licensing)) out.push("Licenciamento GRAPROHAB atualizado");
   if (!sameJson(prev.resourceRates, next.resourceRates)) out.push("Diárias de recursos alteradas");

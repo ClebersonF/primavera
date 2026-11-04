@@ -12,6 +12,8 @@ export interface PortfolioItem {
   spi: number | null;
   /** Dias corridos até o prazo; negativo = vencido; null = sem prazo. */
   daysToDeadline: number | null;
+  /** Índice de impacto socioambiental 0..1 (ver `impactIndex`); null/ausente = não avaliado. */
+  impact?: number | null;
 }
 
 export interface PriorityWeights {
@@ -19,9 +21,23 @@ export interface PriorityWeights {
   schedule: number;
   deadline: number;
   budget: number;
+  /** Impacto socioambiental. Peso 0 (padrão) desliga o critério. */
+  impact?: number;
 }
 
-export const DEFAULT_PRIORITY_WEIGHTS: PriorityWeights = { nature: 0.3, schedule: 0.3, deadline: 0.25, budget: 0.15 };
+/** Padrão operacional: o impacto não entra no ranking. */
+export const DEFAULT_PRIORITY_WEIGHTS: Required<PriorityWeights> = { nature: 0.3, schedule: 0.3, deadline: 0.25, budget: 0.15, impact: 0 };
+
+/** Estratégias prontas; os pesos são convenções editáveis, não regra normativa. */
+export const PRIORITY_PRESETS = {
+  padrao: { label: "Operacional (padrão)", description: "Urgência, desvio de prazo, proximidade do prazo e porte.", weights: DEFAULT_PRIORITY_WEIGHTS },
+  impacto: {
+    label: "Impacto socioambiental (CALM)",
+    description: "Prioriza projetos de maior impacto ecológico e social; prazo e desvio continuam pesando.",
+    weights: { nature: 0.1, schedule: 0.2, deadline: 0.2, budget: 0.05, impact: 0.45 },
+  },
+} as const;
+export type PriorityPresetKey = keyof typeof PRIORITY_PRESETS;
 
 /** Urgência por natureza (0..1). Convenção editável, não regra normativa. */
 export const NATURE_URGENCY: Record<PortfolioNature, number> = {
@@ -39,7 +55,7 @@ export interface PrioritizedItem extends PortfolioItem {
   band: PriorityBand;
   rank: number;
   /** Cada fator em 0..1, antes do peso. */
-  factors: PriorityWeights;
+  factors: Required<PriorityWeights>;
   /** Fatores sem dado (usaram valor neutro 0,5). */
   missing: Array<keyof PriorityWeights>;
 }
@@ -52,7 +68,8 @@ export function prioritizePortfolio(
   items: readonly PortfolioItem[],
   weights: PriorityWeights = DEFAULT_PRIORITY_WEIGHTS,
 ): PrioritizedItem[] {
-  const w = Object.values(weights);
+  const wImpact = weights.impact ?? 0;
+  const w = [weights.nature, weights.schedule, weights.deadline, weights.budget, wImpact];
   if (w.some((x) => !(Number.isFinite(x) && x >= 0)) || w.reduce((a, b) => a + b, 0) <= 0) {
     throw new PmoError("Priorização: pesos devem ser ≥ 0 e somar mais que zero.");
   }
@@ -68,9 +85,14 @@ export function prioritizePortfolio(
     // Vencido = 1; 90+ dias = 0.
     const deadline = i.daysToDeadline === null || !Number.isFinite(i.daysToDeadline) ? (missing.push("deadline"), 0.5) : clamp01(1 - i.daysToDeadline / 90);
     const budget = maxBudget > 0 ? i.budget / maxBudget : 0;
-    const factors = { nature, schedule, deadline, budget };
+    let impact = 0;
+    if (i.impact === null || i.impact === undefined || !Number.isFinite(i.impact)) {
+      impact = 0.5;
+      if (wImpact > 0) missing.push("impact"); // só é "falta" quando o critério está ligado
+    } else impact = clamp01(i.impact);
+    const factors = { nature, schedule, deadline, budget, impact };
     const score = r1(
-      (100 * (weights.nature * nature + weights.schedule * schedule + weights.deadline * deadline + weights.budget * budget)) / total,
+      (100 * (weights.nature * nature + weights.schedule * schedule + weights.deadline * deadline + weights.budget * budget + wImpact * impact)) / total,
     );
     const band: PriorityBand = score >= 66 ? "alta" : score >= 33 ? "media" : "baixa";
     return { ...i, score, band, rank: 0, factors, missing };
