@@ -24,6 +24,8 @@ export interface ActivityLike {
   percentComplete?: number;
   /** "Não iniciar antes de" (YYYY-MM-DD). */
   notBefore?: string;
+  /** "Terminar até" (YYYY-MM-DD); só gera alerta, não move a atividade. */
+  deadline?: string;
   /** Datas reais (YYYY-MM-DD); o término real conta como 100% quando não há % informado. */
   actualStart?: string;
   actualFinish?: string;

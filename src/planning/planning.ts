@@ -23,6 +23,8 @@ export interface ActivityPlan {
   percentComplete?: number;
   /** "Não iniciar antes de" (YYYY-MM-DD). */
   notBefore?: string;
+  /** "Terminar até" (YYYY-MM-DD): prazo-limite; não move a atividade, só aponta violação (ver `deadlineChecks`). */
+  deadline?: string;
   /** Código de atividade (grupo), texto livre até 40 caracteres. */
   group?: string;
   /** Data real de início (YYYY-MM-DD). */
@@ -100,6 +102,8 @@ export interface HistoryEntry {
 export interface WorkPlanning {
   rev: number;
   baselines: Baseline[];
+  /** Posição (0 = primeira) da linha de base primária, usada no EVM e no Gantt; ausente = a mais recente. */
+  primaryBaseline?: number;
   /** Custos por id de atividade. */
   costs: Record<string, CostEntry>;
   changes: ChangeRequest[];
@@ -226,6 +230,10 @@ function cleanActivityPlan(v: unknown): ActivityPlan | null {
   if (v.notBefore !== undefined) {
     if (!validDate(v.notBefore)) return null;
     out.notBefore = v.notBefore;
+  }
+  if (v.deadline !== undefined) {
+    if (!validDate(v.deadline)) return null;
+    out.deadline = v.deadline;
   }
   for (const k of ["actualStart", "actualFinish"] as const) {
     if (v[k] !== undefined) {
@@ -405,6 +413,9 @@ export function normalizePlanning(raw: unknown): WorkPlanning {
   if (tax) result.tax = tax;
   const licensing = raw.licensing === undefined ? null : cleanLicensing(raw.licensing);
   if (licensing) result.licensing = licensing;
+  if (Number.isInteger(raw.primaryBaseline) && (raw.primaryBaseline as number) >= 0 && (raw.primaryBaseline as number) < baselines.length) {
+    result.primaryBaseline = raw.primaryBaseline as number;
+  }
   return result;
 }
 
@@ -414,6 +425,22 @@ export function withBaseline(p: WorkPlanning, baseline: Baseline): WorkPlanning 
   if (cleanBaseline(baseline) === null) throw new PmoError("Baseline inválida.");
   if (p.baselines.length >= MAX_BASELINES) throw new PmoError(`Limite de ${MAX_BASELINES} baselines por obra.`);
   return bump(p, { baselines: [...p.baselines, baseline] });
+}
+
+/** Linha de base primária: a escolhida, ou a mais recente quando nenhuma foi escolhida. */
+export function primaryBaselineOf(p: Pick<WorkPlanning, "baselines" | "primaryBaseline">): Baseline | undefined {
+  const i = p.primaryBaseline;
+  return i !== undefined && Number.isInteger(i) && i >= 0 && i < p.baselines.length ? p.baselines[i] : p.baselines.at(-1);
+}
+
+/** Escolhe a linha de base primária pela posição; `undefined` volta ao padrão (a mais recente). */
+export function withPrimaryBaseline(p: WorkPlanning, index: number | undefined): WorkPlanning {
+  if (index !== undefined && !(Number.isInteger(index) && index >= 0 && index < p.baselines.length)) throw new PmoError("Linha de base inexistente.");
+  if (index === p.primaryBaseline) return p;
+  const next: WorkPlanning = { ...p, rev: p.rev + 1 };
+  if (index === undefined) delete next.primaryBaseline;
+  else next.primaryBaseline = index;
+  return next;
 }
 
 /** `patch` com valor `undefined` apaga o campo. */
@@ -625,6 +652,7 @@ export function describePlanningChange(prev: WorkPlanning, next: WorkPlanning): 
   if (!sameJson(prev.holidays, next.holidays)) out.push(`Feriados: ${prev.holidays.length} → ${next.holidays.length}`);
   if (next.baselines.length > prev.baselines.length) out.push(`Linha de base criada: ${next.baselines.at(-1)?.name ?? ""}`);
   else if (!sameJson(prev.baselines, next.baselines)) out.push("Linhas de base alteradas");
+  if (prev.primaryBaseline !== next.primaryBaseline) out.push(next.primaryBaseline === undefined ? "Linha de base primária: a mais recente" : `Linha de base primária: ${next.baselines[next.primaryBaseline]?.name ?? ""}`);
   for (const sc of next.scenarios) if (!prev.scenarios.some((x) => x.id === sc.id)) out.push(`Cenário ${sc.id} criado: ${sc.name}`);
   for (const sc of prev.scenarios) if (!next.scenarios.some((x) => x.id === sc.id)) out.push(`Cenário ${sc.id} removido`);
   if (!sameJson(prev.tax, next.tax)) out.push("CBS da obra atualizada");
