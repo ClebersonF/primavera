@@ -42,6 +42,35 @@ export interface Risk {
   activityId?: string;
 }
 
+export const MAX_HISTORY = 300;
+
+/** Estado do licenciamento GRAPROHAB/CETESB da obra, como digitado na tela (textos). */
+export interface LicensingState {
+  /** YYYY-MM-DD ou "" */
+  start: string;
+  withComunique: boolean;
+  /** Dias por etapa (texto digitado), por id de etapa. */
+  days: Record<string, string>;
+  /** Ids dos documentos já reunidos. */
+  present: string[];
+  /** Data de emissão da certidão ("" se não houver). */
+  issuedOn: string;
+  /** Largura do rio em metros (texto). */
+  river: string;
+  /** Tabelas de área por fonte (Planta, Memorial…) → campo → texto. */
+  areas: Record<string, Record<string, string>>;
+}
+
+export const EMPTY_LICENSING: LicensingState = Object.freeze({ start: "", withComunique: false, days: {}, present: [], issuedOn: "", river: "20", areas: {} }) as LicensingState;
+
+/** Linha do histórico de alterações do planejamento. */
+export interface HistoryEntry {
+  /** ISO-8601 */
+  at: string;
+  by: string;
+  summary: string;
+}
+
 /**
  * Dados de planejamento de uma obra que o cadastro não tinha: linhas de base, custos e pedidos de
  * mudança. Vão dentro da própria obra (mesmo registro do Odoo). `rev` conta as gravações, para
@@ -59,6 +88,12 @@ export interface WorkPlanning {
   holidays: string[];
   /** Registro de riscos da obra. */
   risks: Risk[];
+  /** Histórico de alterações (mais antigas primeiro; guarda as últimas MAX_HISTORY). */
+  history: HistoryEntry[];
+  /** Diária (R$) por responsável, usada no custo de mão de obra. */
+  resourceRates: Record<string, number>;
+  /** Licenciamento GRAPROHAB da obra (ausente até ser preenchido). */
+  licensing?: LicensingState;
 }
 
 export const EMPTY_PLANNING: WorkPlanning = Object.freeze({
@@ -69,6 +104,8 @@ export const EMPTY_PLANNING: WorkPlanning = Object.freeze({
   activityPlans: {},
   holidays: [],
   risks: [],
+  history: [],
+  resourceRates: {},
 }) as WorkPlanning;
 export const MAX_HOLIDAYS = 400;
 export const MAX_PREDECESSORS = 50;
@@ -197,6 +234,44 @@ function cleanRisk(v: unknown): Risk | null {
   return r;
 }
 
+const short = (v: unknown, max: number): string | null => (typeof v === "string" && v.length <= max ? v : null);
+
+/** Valida o estado do licenciamento; devolve null se algum campo for inválido. */
+export function cleanLicensing(v: unknown): LicensingState | null {
+  if (!isObj(v)) return null;
+  const start = v.start === "" ? "" : validDate(v.start) ? (v.start as string) : null;
+  const issuedOn = v.issuedOn === "" ? "" : validDate(v.issuedOn) ? (v.issuedOn as string) : null;
+  const river = short(v.river, 12);
+  if (start === null || issuedOn === null || river === null || typeof v.withComunique !== "boolean") return null;
+  const days: Record<string, string> = {};
+  if (!isObj(v.days) || Object.keys(v.days).length > 30) return null;
+  for (const [k, x] of Object.entries(v.days)) {
+    const t = short(x, 12);
+    if (!safeKey(k) || k.length > 40 || t === null) return null;
+    days[k] = t;
+  }
+  if (!Array.isArray(v.present) || v.present.length > 60) return null;
+  const present: string[] = [];
+  for (const d of v.present) {
+    const t = short(d, 60);
+    if (t === null || t === "") return null;
+    if (!present.includes(t)) present.push(t);
+  }
+  const areas: Record<string, Record<string, string>> = {};
+  if (!isObj(v.areas) || Object.keys(v.areas).length > 10) return null;
+  for (const [src, fields] of Object.entries(v.areas)) {
+    if (!safeKey(src) || src.length > 60 || !isObj(fields) || Object.keys(fields).length > 10) return null;
+    const out: Record<string, string> = {};
+    for (const [f, x] of Object.entries(fields)) {
+      const t = short(x, 20);
+      if (!safeKey(f) || f.length > 20 || t === null) return null;
+      out[f] = t;
+    }
+    areas[src] = out;
+  }
+  return { start, withComunique: v.withComunique, days, present, issuedOn, river, areas };
+}
+
 function cleanHolidays(v: unknown): string[] {
   if (!Array.isArray(v)) return [];
   return [...new Set(v.filter(validDate))].sort().slice(0, MAX_HOLIDAYS);
@@ -241,7 +316,22 @@ export function normalizePlanning(raw: unknown): WorkPlanning {
       }
     }
   }
-  return { rev, baselines, costs, changes, activityPlans, holidays: cleanHolidays(raw.holidays), risks };
+  const history: HistoryEntry[] = [];
+  if (Array.isArray(raw.history)) {
+    for (const h of raw.history) {
+      if (isObj(h) && typeof h.at === "string" && typeof h.by === "string" && typeof h.summary === "string" && h.summary !== "" && h.summary.length <= 500 && h.by.length <= 100 && Number.isFinite(Date.parse(h.at))) {
+        history.push({ at: h.at, by: h.by, summary: h.summary });
+      }
+    }
+  }
+  const resourceRates: Record<string, number> = {};
+  if (isObj(raw.resourceRates)) {
+    for (const [k, v] of Object.entries(raw.resourceRates)) if (safeKey(k) && k.length <= 100 && isMoney(v)) resourceRates[k] = v;
+  }
+  const result: WorkPlanning = { rev, baselines, costs, changes, activityPlans, holidays: cleanHolidays(raw.holidays), risks, history: history.slice(-MAX_HISTORY), resourceRates };
+  const licensing = raw.licensing === undefined ? null : cleanLicensing(raw.licensing);
+  if (licensing) result.licensing = licensing;
+  return result;
 }
 
 const bump = (p: WorkPlanning, patch: Partial<WorkPlanning>): WorkPlanning => ({ ...p, ...patch, rev: p.rev + 1 });
@@ -336,6 +426,26 @@ export function riskMatrix(risks: readonly Risk[]): { probability: number; impac
   return cells;
 }
 
+/** Define (ou remove, com `undefined`) a diária de um responsável. */
+export function withResourceRate(p: WorkPlanning, resource: string, rate: number | undefined): WorkPlanning {
+  const name = resource.trim();
+  if (!safeKey(name) || name.length > 100) throw new PmoError("Nome de responsável inválido.");
+  if (rate !== undefined && !isMoney(rate)) throw new PmoError("A diária deve ser um valor maior ou igual a zero.");
+  if (p.resourceRates[name] === rate) return p;
+  const resourceRates = { ...p.resourceRates };
+  if (rate === undefined) delete resourceRates[name];
+  else resourceRates[name] = rate;
+  return bump(p, { resourceRates });
+}
+
+/** Grava o estado do licenciamento (valida; sem mudança devolve o mesmo objeto). */
+export function withLicensing(p: WorkPlanning, state: LicensingState): WorkPlanning {
+  const clean = cleanLicensing(state);
+  if (clean === null) throw new PmoError("Dados de licenciamento inválidos (datas, textos longos demais ou campos fora do formato).");
+  if (JSON.stringify(clean) === JSON.stringify(p.licensing ?? EMPTY_LICENSING)) return p;
+  return bump(p, { licensing: clean });
+}
+
 /** Substitui a lista de feriados (datas YYYY-MM-DD). */
 export function withHolidays(p: WorkPlanning, holidays: readonly string[]): WorkPlanning {
   if (holidays.length > MAX_HOLIDAYS) throw new PmoError(`No máximo ${MAX_HOLIDAYS} feriados.`);
@@ -380,4 +490,43 @@ export function nextChangeId(p: Pick<WorkPlanning, "changes">): string {
     return n ? Math.max(m, Number(n[1])) : m;
   }, 0);
   return `CR-${String(max + 1).padStart(3, "0")}`;
+}
+
+const sameJson = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+const keysChanged = <T>(a: Record<string, T>, b: Record<string, T>) =>
+  [...new Set([...Object.keys(a), ...Object.keys(b)])].filter((k) => !sameJson(a[k], b[k])).sort();
+
+/** Descreve em português o que mudou entre dois planejamentos (uma frase por área alterada). */
+export function describePlanningChange(prev: WorkPlanning, next: WorkPlanning): string[] {
+  const out: string[] = [];
+  const ap = keysChanged(prev.activityPlans, next.activityPlans);
+  if (ap.length) out.push(`Cronograma alterado em ${ap.length} atividade(s): ${ap.slice(0, 5).join(", ")}${ap.length > 5 ? "…" : ""}`);
+  if (!sameJson(prev.holidays, next.holidays)) out.push(`Feriados: ${prev.holidays.length} → ${next.holidays.length}`);
+  if (next.baselines.length > prev.baselines.length) out.push(`Linha de base criada: ${next.baselines.at(-1)?.name ?? ""}`);
+  else if (!sameJson(prev.baselines, next.baselines)) out.push("Linhas de base alteradas");
+  if (!sameJson(prev.licensing, next.licensing)) out.push("Licenciamento GRAPROHAB atualizado");
+  if (!sameJson(prev.resourceRates, next.resourceRates)) out.push("Diárias de recursos alteradas");
+  const cost = keysChanged(prev.costs, next.costs);
+  if (cost.length) out.push(`Custos alterados em ${cost.length} atividade(s)`);
+  for (const c of next.changes) {
+    const old = prev.changes.find((x) => x.id === c.id);
+    if (!old) out.push(`Pedido de mudança ${c.id} criado`);
+    else if (old.status !== c.status) out.push(`Pedido de mudança ${c.id}: ${old.status} → ${c.status}`);
+  }
+  for (const r of next.risks) {
+    const old = prev.risks.find((x) => x.id === r.id);
+    if (!old) out.push(`Risco ${r.id} registrado`);
+    else if (!sameJson(old, r)) out.push(`Risco ${r.id} atualizado${old.status !== r.status ? ` (${old.status} → ${r.status})` : ""}`);
+  }
+  for (const r of prev.risks) if (!next.risks.some((x) => x.id === r.id)) out.push(`Risco ${r.id} removido`);
+  return out;
+}
+
+/** Acrescenta ao histórico uma linha por mudança detectada; sem mudança, devolve `next` intacto. */
+export function recordHistory(prev: WorkPlanning, next: WorkPlanning, by: string, at: string): WorkPlanning {
+  const lines = describePlanningChange(prev, next);
+  if (lines.length === 0) return next;
+  const who = by.trim().slice(0, 100) || "Desconhecido";
+  const added = lines.map((summary) => ({ at, by: who, summary: summary.slice(0, 500) }));
+  return { ...next, history: [...next.history, ...added].slice(-MAX_HISTORY) };
 }

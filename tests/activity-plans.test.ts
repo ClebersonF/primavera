@@ -123,3 +123,24 @@ describe("riscos", () => {
     expect(m.flatMap((c) => c.ids)).toEqual(["R-001"]);
   });
 });
+
+import { describePlanningChange, MAX_HISTORY, recordHistory } from "../src";
+
+describe("histórico", () => {
+  it("descreve mudanças e registra autor", () => {
+    let p = withActivityPlan(EMPTY_PLANNING, "a1", { durationDays: 3 });
+    p = withRisk(p, { id: "R-001", title: "x", probability: 1, impact: 1, status: "aberto" });
+    const d = describePlanningChange(EMPTY_PLANNING, p);
+    expect(d).toHaveLength(2);
+    const h = recordHistory(EMPTY_PLANNING, p, " Ana ", "2026-11-04T10:00:00.000Z");
+    expect(h.history.map((x) => x.by)).toEqual(["Ana", "Ana"]);
+    expect(recordHistory(p, p, "Ana", "2026-11-04T10:00:00.000Z")).toBe(p);
+  });
+  it("limita o tamanho e normaliza entradas inválidas", () => {
+    let p = EMPTY_PLANNING;
+    for (let i = 0; i < MAX_HISTORY + 20; i++) p = recordHistory(p, withHolidays(p, [`2026-01-${String((i % 28) + 1).padStart(2, "0")}`, ...(i % 2 ? ["2027-01-01"] : [])]), "a", "2026-11-04T10:00:00.000Z");
+    expect(p.history.length).toBeLessThanOrEqual(MAX_HISTORY);
+    const n = normalizePlanning({ history: [{ at: "x", by: "a", summary: "s" }, { at: "2026-11-04T10:00:00Z", by: "a", summary: "ok" }, 5] });
+    expect(n.history).toHaveLength(1);
+  });
+});

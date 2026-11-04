@@ -33,12 +33,12 @@ Atualizado em 04/11/2026. Legenda: **OK** atendido e validado · **Parcial** ate
 | # | Requisito do manual | Status | Evidência |
 |---|---|---|---|
 | G1 | Fluxo do processo em etapas, com e sem Comunique-se | OK | `buildGraprohabProcess`; Gantt na tela; duração por etapa editável |
-| G2 | Checklist de documentos | Parcial | `GRAPROHAB_DOCUMENTS`; tela marca os faltantes, **sem gravar** por empreendimento |
+| G2 | Checklist de documentos | Parcial | `GRAPROHAB_DOCUMENTS`; tela marca os faltantes, **gravado na obra** (selecione a obra na tela) por empreendimento |
 | G3 | Prazo do Comunique-se (180 dias corridos) | OK | `comuniqueSeDeadline`; tela |
 | G4 | Faixas de APP (Lei 12.651, art. 4º, I), nascentes 50 m, faixa não edificável 15 m | OK | `appBufferMeters`; tela |
 | G5 | Coerência do quadro de áreas entre planta, memorial e cartas | OK | `checkAreaTableConsistency`; seção "Quadro de áreas" |
 | G6 | Prazos reais de cada etapa | **Aberto** | O manual não os define; os usados são estimativas editáveis |
-| G7 | Acompanhar vários processos por empreendimento/imóvel | **Aberto** | Sem cadastro; precisa de modelo de dados e ligação com Imóveis |
+| G7 | Acompanhar vários processos por empreendimento/imóvel | Parcial | Um processo de licenciamento **por obra**, gravado com a obra (etapas, prazos, documentos, áreas, Comunique-se); sem cadastro próprio de empreendimento nem vários processos por obra |
 
 ## 4. Paridade funcional com o Oracle Primavera (P6 / Unifier)
 
@@ -52,7 +52,7 @@ Atualizado em 04/11/2026. Legenda: **OK** atendido e validado · **Parcial** ate
 | P6 | Gantt com barras da baseline | **OK** | Barra fina da baseline mais recente sobre cada atividade, com liga/desliga na tela do cronograma |
 | P7 | Linhas de base múltiplas e comparação | Parcial | Aba **Linha de base**; EVM usa a mais recente (sem escolher qual é a "primária") |
 | P8 | Atualização de progresso | Parcial | % concluído editável por atividade (vale sobre o status); sem datas reais de início/término |
-| P9 | Recursos e histograma | Parcial | `/pmo/recursos`: carga por responsável (1 pessoa por atividade). Sem tabela de preços, sem nivelamento |
+| P9 | Recursos e histograma | Parcial | `/pmo/recursos`: carga por responsável (1 pessoa por atividade), **diária por responsável e custo de mão de obra**, **sugestão de nivelamento** (não altera o plano). Sem calendário de recursos nem várias unidades por atividade na tela |
 | P10 | Planilha de custos (orçado, comprometido, realizado, previsão, variação) | OK | Aba **Custos** |
 | P11 | Curva S / fluxo de caixa | OK | Tela de cronograma |
 | P12 | Valor agregado (PV, EV, SPI, CPI, EAC, ETC, VAC, TCPI) | OK | `src/evm`; portfólio e aba Custos; PV/EV medidos contra a baseline mais recente |
@@ -60,7 +60,7 @@ Atualizado em 04/11/2026. Legenda: **OK** atendido e validado · **Parcial** ate
 | P14 | Pedidos de mudança com impacto e aprovação | Parcial | Aba **Mudanças**: fluxo e impacto; aprovação por papel (gerente/diretor); **não** usa a tela de Aprovações da app |
 | P15 | Gestão de riscos | **OK** | Aba **Riscos**: registro (probabilidade × impacto 1–5, status, responsável, resposta, atividade), matriz 5×5 e coluna de riscos no portfólio; sem análise quantitativa (Monte Carlo) |
 | P16 | Códigos de atividade, filtros e layouts, relatórios | Parcial | Grupo (código de atividade) por atividade, filtro por grupo e exportação CSV do cronograma; sem layouts salvos nem relatórios formatados |
-| P17 | Persistência compartilhada, multiusuário, histórico e auditoria | Parcial | Baseline, custos e mudanças são gravados **com a obra no Odoo** (`x_obras`, campo de notas, mesmo mecanismo das demais informações da obra); outra pessoa enxerga na hora. Conflito simultâneo é **detectado** (quem grava primeiro é avisado), não evitado. **Sem histórico/auditoria** de quem mudou o quê; modelo dedicado no Odoo segue como evolução |
+| P17 | Persistência compartilhada, multiusuário, histórico e auditoria | Parcial | Baseline, custos e mudanças são gravados **com a obra no Odoo** (`x_obras`, campo de notas, mesmo mecanismo das demais informações da obra); outra pessoa enxerga na hora. Conflito simultâneo é **detectado** (quem grava primeiro é avisado), não evitado. **Histórico de alterações** (quem, quando, o quê; últimas 300) na aba Histórico; modelo dedicado no Odoo segue como evolução |
 | P18 | Perfis de acesso | OK | Menu e rotas PMO só para analista, gerente e diretor (`src/lib/rbac.ts`) |
 
 ## 5. Processo (prompt da squad)
