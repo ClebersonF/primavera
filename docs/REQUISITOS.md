@@ -1,4 +1,4 @@
-# Requisitos e rastreabilidade — Gestão de Projetos (PMO) no Gestor de Galpões
+# Requisitos e rastreabilidade — Gestão de Projetos (PMO) e identidade CALM
 
 Atualizado em 04/11/2026. Legenda: **OK** atendido e validado · **Parcial** atendido com limite descrito · **Aberto** não atendido (depende de decisão, backend ou dado).
 
@@ -11,6 +11,9 @@ Atualizado em 04/11/2026. Legenda: **OK** atendido e validado · **Parcial** ate
 | Manual do GRAPROHAB (conversa do Gemini) | Texto **gerado por IA**; o manual não define prazo por etapa |
 | Segundo link do Gemini | Abriu **vazio**; nada foi aproveitado dele |
 | Diretriz do usuário | "Espelhar o Oracle Primavera quanto a funcionalidades" (funções, não visual nem marca) |
+| Diretriz do usuário (04/11/2026) | Identidade da ferramenta para a **CALM** (projetos ambientais, impacto ecológico e social) e UI/UX que permita **priorizar o portfólio por essa estratégia** |
+| Documentação Oracle — [Introducing P6 Professional](https://docs.oracle.com/cd/F74771_01/client_help/en_US/introducing_primavera_project_management.htm) | Lida nesta rodada. Cobre EPS/OBS, CPM e nivelamento, códigos e campos definidos pelo usuário, recursos e funções, multiusuário, rollups, limiares, questões e riscos, produtos de trabalho, visualizador, assistente de relatórios. **Não** cobre atividades, relações, restrições, calendários, linhas de base, layouts, mudança global, cópia/what-if nem passos |
+| Documentação Oracle — [Primavera Unifier](https://www.oracle.com/construction-engineering/primavera-unifier/) | Página de produto lida nesta rodada (só os primeiros 100 mil caracteres). Custos e planilha de custos, processos de negócio e fluxos configuráveis, fluxo de caixa, documentos e assinatura, previsão, painéis, ativos, contratos, ordens de mudança. O Unifier **não** faz cronograma completo: integra o P6 |
 | Diretriz do usuário | Trabalhar só na **cópia** do projeto, sem gastar créditos do Lovable (via GitHub) |
 
 ## 2. Estudo CBS
@@ -56,26 +59,63 @@ Atualizado em 04/11/2026. Legenda: **OK** atendido e validado · **Parcial** ate
 | P10 | Planilha de custos (orçado, comprometido, realizado, previsão, variação) | OK | Aba **Custos** |
 | P11 | Curva S / fluxo de caixa | OK | Tela de cronograma |
 | P12 | Valor agregado (PV, EV, SPI, CPI, EAC, ETC, VAC, TCPI) | OK | `src/evm`; portfólio e aba Custos; PV/EV medidos contra a baseline primária |
-| P13 | Portfólio e priorização | Parcial | `/pmo`: ranking multicritério com pesos fixos na tela; matriz prioridade × situação do prazo; **cenários "e se"** por obra na aba Cenários (atraso, ± duração e custo por atividade, custo global; compara prazo, custo e caminho crítico sem alterar o plano). Sem cenários de portfólio |
+| P13 | Portfólio e priorização | Parcial | `/pmo`: ranking multicritério com **estratégia escolhida na tela** (preset Operacional ou Impacto socioambiental/CALM, ou pesos personalizados guardados no navegador de quem escolheu); matriz prioridade × situação do prazo; **cenários "e se"** por obra. Sem cenários de portfólio e sem pesos compartilhados entre usuários |
 | P14 | Pedidos de mudança com impacto e aprovação | Parcial | Aba **Mudanças**: fluxo e impacto; aprovação por papel (gerente/diretor); **não** usa a tela de Aprovações da app |
 | P15 | Gestão de riscos | **OK** | Aba **Riscos**: registro (probabilidade × impacto 1–5, status, responsável, resposta, atividade), matriz 5×5 e coluna de riscos no portfólio; sem análise quantitativa (Monte Carlo) |
 | P16 | Códigos de atividade, filtros e layouts, relatórios | Parcial | Grupo (código de atividade) por atividade, filtro por grupo e exportação CSV do cronograma; sem layouts salvos nem relatórios formatados |
 | P17 | Persistência compartilhada, multiusuário, histórico e auditoria | Parcial | Baseline, custos e mudanças são gravados **com a obra no Odoo** (`x_obras`, campo de notas, mesmo mecanismo das demais informações da obra); outra pessoa enxerga na hora. Conflito simultâneo é **detectado** (quem grava primeiro é avisado), não evitado. **Histórico de alterações** (quem, quando, o quê; últimas 300) na aba Histórico; modelo dedicado no Odoo segue como evolução |
 | P18 | Perfis de acesso | OK | Menu e rotas PMO só para analista, gerente e diretor (`src/lib/rbac.ts`) |
 
+## 4A. Estratégia CALM — projetos ambientais e impacto ecológico e social
+
+| # | Requisito | Status | Onde / limite |
+|---|---|---|---|
+| E1 | Identidade da CALM (nome, logo, paleta, vocabulário "Projetos/Áreas", textos de entrada, título e rodapé de PDF) | OK | Marca `calm` é a padrão (`src/stores/branding.ts`); quem já tinha a marca KONSTRUI ativa migra para a CALM, as demais marcas continuam e podem ser reativadas em Marca branca. Logo é texto (CA/LM); **não há logomarca oficial** — envie o arquivo em Marca branca para trocar |
+| E2 | Registrar impacto por projeto (biodiversidade, clima, água/solo, social; hectares, pessoas, tCO2e) | OK | Aba **Impacto** do planejamento; gravado com a obra; entra no histórico |
+| E3 | Priorizar o portfólio pela estratégia | OK | Seletor de estratégia e pesos na tela `/pmo`; padrão Operacional ignora impacto; preset CALM pesa impacto 45% |
+| E4 | Totais de impacto do portfólio e aviso de projetos não avaliados | OK | Cartões em `/pmo`; fator ausente vale neutro e é marcado com "*" |
+| E5 | Rigor dos números de impacto (inventário de carbono, certificação, ODS/ESG) | **Aberto** | São estimativas do time, sem metodologia, sem evidência anexada e sem mapeamento para ODS/GRI. Definir a metodologia da CALM antes de divulgar qualquer número |
+| E6 | Pesos da estratégia compartilhados pela equipe | **Aberto** | Pesos personalizados ficam só no navegador; os presets são iguais para todos. Compartilhar exige gravar em local central (Odoo) |
+| E7 | Licenciamento ambiental (GRAPROHAB/CETESB) por projeto | Parcial | Ver seção 3 (G7) |
+
+## 4B. GAP consolidado em relação ao Primavera (P6 e Unifier)
+
+Cobertura real hoje: motor de cronograma e valor agregado completo; planejamento, custos, mudanças, riscos, cenários, histórico, licenciamento, CBS e impacto em uma tela por obra; portfólio e recursos. Lacunas, da mais relevante para a estratégia da CALM para a menos:
+
+| Função do Primavera | Fonte | Situação na app | Observação |
+|---|---|---|---|
+| Estrutura corporativa (EPS) e organizacional (OBS) | P6 (doc. lida) | **Não há** | A app tem lista plana de obras; sem programas/carteiras hierárquicas nem responsabilidades por nó |
+| Atribuição de recursos e funções (unidades, curvas, calendário de recurso) | P6 (doc. lida) | Parcial | 1 responsável por atividade, diária e nivelamento sugerido; sem funções, unidades nem calendário de recurso |
+| Códigos de atividade e campos definidos pelo usuário | P6 (doc. lida) | Parcial | Um código ("Grupo") por atividade; sem campos próprios e sem hierarquia de códigos |
+| Layouts, filtros salvos e assistente de relatórios | P6 (doc. lida) | Parcial | Filtro por grupo e CSV; sem layouts salvos nem relatório formatado |
+| Limiares (management by threshold), questões (issues) | P6 (doc. lida) | **Não há** | Riscos existem; questões e alertas por limiar, não |
+| Produtos de trabalho e documentos por atividade | P6 (doc. lida) | **Não há** | A app tem módulo de documentos geral, sem vínculo com a atividade do planejamento |
+| Visualizador de lógica (diagrama de rede) | P6 (doc. lida) | **Não há** | Só Gantt |
+| Cópia de projeto e what-if entre projetos | não confirmado na doc. lida | Parcial | Cenários por obra; sem cenário de portfólio |
+| Mudança global, passos de atividade, restrições obrigatórias | não confirmado na doc. lida | **Não há** (restrição "terminar até" existe) | Conhecimento geral do produto; confirmar na doc. completa |
+| Planilha de custos ligada a contratos, compromissos e pagamentos | Unifier (doc. lida) | Parcial | Aba Custos por atividade (orçado, comprometido, realizado, previsão); sem contratos nem pagamentos ligados |
+| Processos de negócio e fluxos configuráveis | Unifier (doc. lida) | Parcial | Fluxo fixo de pedidos de mudança com aprovação por papel; sem construtor de fluxo e fora da tela de Aprovações da app |
+| Fluxo de caixa por cronograma, projeto e portfólio | Unifier (doc. lida) | Parcial | Curva S por obra; sem consolidação de portfólio |
+| Previsão contra a linha de base, painéis e relatórios | Unifier (doc. lida) | Parcial | EVM, EAC/ETC e painel de portfólio; sem biblioteca de relatórios |
+| Assinatura digital e revisão de documentos | Unifier (doc. lida) | Fora de escopo | Existe fluxo próprio de assinatura em OS |
+| Ordens de mudança que atualizam contrato e planilha de custos | Unifier (doc. lida) | Parcial | Mudança aprovada altera prazo/EVM; não altera contrato |
+| Ativos: manutenção, garantias, inspeções, locação | Unifier (doc. lida) | **Já existe** (módulos de Facilities/Patrimônio) | Não faz parte do PMO |
+
+Funções que o Primavera não tem e a app passou a ter: licenciamento GRAPROHAB/CETESB, CBS por obra e impacto socioambiental com priorização por estratégia.
+
 ## 5. Processo (prompt da squad)
 
 | Exigência | Status |
 |---|---|
 | Entender → investigar → planejar → implementar → testar → revisar | OK — fluxo seguido; revisor independente apontou 7 defeitos na Onda 3; os 7 foram tratados, com teste de regressão |
-| Não esconder testes que falham; separar bug de ambiente | OK — registrado: o build não roda (vite.config.ts é script Deno); 54 erros de tipo preexistentes |
+| Não esconder testes que falham; separar bug de ambiente | OK — registrado: o build local não roda (vite.config.ts é script Deno); 20 erros de tipo preexistentes na última conferência (eram 31 antes das correções feitas pelo próprio Lovable), nenhum em arquivos do PMO |
 | Não fazer deploy sem autorização | OK — nenhum deploy; publicação apenas por `git push` no GitHub da cópia |
 | Documentação atualizada | OK — este documento e os READMEs |
 
 ## 6. Como validar
 
 - Biblioteca (`ClebersonF/primavera`): `npm test` (vitest) e `npx tsc --noEmit`.
-- App (cópia): `npx tsc --noEmit` deve manter os 54 erros preexistentes e nenhum em `pmo`, `planning`, `features/schedule`.
+- App (cópia): `npx tsc --noEmit` deve manter só os erros preexistentes (20 na última conferência) e nenhum em `pmo`, `planning`, `features/schedule`, `stores/branding`.
 - Persistência: com o Odoo indisponível a gravação é recusada com aviso; em obra do Odoo, a leitura parte sempre do registro atual.
 - Telas: abrir **Gestão de Projetos (PMO)** no menu; `/obras/<id>/cronograma` e `/obras/<id>/planejamento`. Fluxo validado em navegador com as obras de exemplo (baseline → custo realizado → mudança aprovada → cronograma e portfólio atualizados).
 
@@ -86,3 +126,6 @@ Atualizado em 04/11/2026. Legenda: **OK** atendido e validado · **Parcial** ate
 3. Pesos da priorização (natureza 30%, desvio de prazo 30%, proximidade do prazo 25%, orçamento 15%) e o limite de 30% do alerta de caixa são convenções nossas.
 4. Planejamento gravado no campo de notas de `x_obras` (JSON): sem trilha de auditoria e sem consulta/relatório no Odoo. Obras que existem só no cache do navegador (exemplos) **não gravam** no Odoo. Migrar para modelo dedicado (`x_obras_planejamento`) exige criar o modelo no Odoo e liberar na função de borda.
 5. Mudanças aprovadas valem no cronograma e no EVM; se a atividade for removida ou renomeada, o pedido é ignorado e a tela avisa nas premissas.
+6. Impacto socioambiental (notas 0–5, hectares, pessoas, tCO2e) é estimativa do time, sem metodologia ou evidência anexada; não usar em comunicação externa sem validação técnica.
+7. Pesos de priorização personalizados e a marca ativa ficam no navegador de cada pessoa (localStorage); outra pessoa vê os presets e a marca padrão.
+8. O Lovable altera o código por conta própria (correções automáticas após cada sincronização): confira o histórico do GitHub antes de novos commits.
