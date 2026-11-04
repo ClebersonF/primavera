@@ -1,5 +1,5 @@
 import { DEFAULT_CALENDAR, workDaysBetween, type WorkCalendar } from "../cpm/calendar";
-import { addDaysIso, parseIsoDate } from "../dates";
+import { addDaysIso, toLocalDate } from "../dates";
 import type { WbsNodeInput } from "../wbs/wbs";
 
 /**
@@ -38,11 +38,7 @@ export interface WorkSchedule {
 
 const PERCENT: Record<ActivityLike["status"], number> = { todo: 0, doing: 50, done: 100, blocked: 0 };
 
-const dateOnly = (iso: string) => {
-  const d = iso.slice(0, 10);
-  parseIsoDate(d);
-  return d;
-};
+const dateOnly = (iso: string) => toLocalDate(iso);
 
 /**
  * Converte uma obra em EAP. Sem dados explícitos, as atividades formam uma sequência (FS) na ordem
@@ -68,7 +64,12 @@ export function workToWbsInputs(
 
   const durations = work.activities.map((a) => {
     let dur: number;
-    const end = a.completedAt ?? a.dueDate;
+    // Prazo planejado = dueDate. A conclusão só substitui quando não há prazo; usá-la como plano
+    // esconderia o atraso (uma tarefa concluída tarde pareceria dentro do prazo).
+    const end = a.dueDate ?? a.completedAt;
+    if (a.durationDays === undefined && a.dueDate === undefined && a.completedAt !== undefined) {
+      assumptions.push(`"${a.title}": sem prazo planejado; a data de conclusão foi usada como prazo (atraso não é medido).`);
+    }
     if (a.durationDays !== undefined) {
       dur = a.durationDays;
     } else if (end !== undefined) {

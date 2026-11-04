@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeEvm, prioritizePortfolio, resourceHistogram, PmoError } from "../src";
+import { computeEvm, prioritizePortfolio, resourceHistogram, PmoError, toLocalDate, todayLocal } from "../src";
 
 const acts = [
   { id: "a", plannedCost: 100, start: 0, finish: 10, percentComplete: 100 },
@@ -90,5 +90,50 @@ describe("priorização do portfólio", () => {
     expect(r.map((x) => x.id)).toEqual(["a", "b"]);
     expect(() => prioritizePortfolio([], { nature: 0, schedule: 0, deadline: 0, budget: 0 })).toThrow(PmoError);
     expect(() => prioritizePortfolio([], { nature: -1, schedule: 1, deadline: 1, budget: 1 })).toThrow(PmoError);
+  });
+});
+
+describe("regressões da revisão", () => {
+  it("EVM: status e CPI usam valores sem arredondar", () => {
+    // ev/pv = 0,9496 → arredonda para 0,95, mas é atraso.
+    const a = computeEvm({ activities: [{ id: "x", plannedCost: 10000, start: 0, finish: 10, percentComplete: 94.96 }], asOfDay: 10 });
+    expect(a.spi).toBe(0.95);
+    expect(a.status).toBe("atrasado");
+    // CPI real 0,001 arredonda para 0, mas EAC existe.
+    const b = computeEvm({ activities: [{ id: "x", plannedCost: 100, start: 0, finish: 10, percentComplete: 1 }], asOfDay: 5, actualCost: 1000 });
+    expect(b.cpi).toBe(0);
+    expect(b.eac).toBe(100000);
+  });
+  it("entradas não finitas são rejeitadas", () => {
+    expect(() => computeEvm({ activities: [{ id: "x", plannedCost: Infinity, start: 0, finish: 1, percentComplete: 0 }], asOfDay: 1 })).toThrow(PmoError);
+    expect(() => computeEvm({ activities: [{ id: "x", plannedCost: 1, start: NaN, finish: 1, percentComplete: 0 }], asOfDay: 1 })).toThrow(PmoError);
+    expect(() => resourceHistogram([], { horizon: NaN })).toThrow(PmoError);
+    expect(() => resourceHistogram([], { horizon: 1e12 })).toThrow(PmoError);
+    expect(() => resourceHistogram([{ resource: "A", start: 0.5, finish: 3.5 }])).toThrow(PmoError);
+    expect(() => resourceHistogram([{ resource: "A", start: 0, finish: 3, units: Infinity }])).toThrow(PmoError);
+    expect(() => resourceHistogram([], { capacities: { A: NaN } })).toThrow(PmoError);
+  });
+  it("priorização: valores não finitos viram fator ausente, nunca NaN", () => {
+    const r = prioritizePortfolio([
+      { id: "n", name: "N", budget: 10, spi: NaN, daysToDeadline: NaN },
+      { id: "ok", name: "OK", nature: "emergency", budget: 10, spi: 0.6, daysToDeadline: 5 },
+    ]);
+    expect(r.every((x) => Number.isFinite(x.score))).toBe(true);
+    expect(r[0]!.id).toBe("ok");
+    expect(r[1]!.missing).toEqual(["nature", "schedule", "deadline"]);
+    expect(() => prioritizePortfolio([{ id: "i", name: "I", budget: Infinity, spi: 1, daysToDeadline: 1 }])).toThrow(PmoError);
+    expect(() => prioritizePortfolio([], { nature: Infinity, schedule: 1, deadline: 1, budget: 1 })).toThrow(PmoError);
+  });
+});
+
+describe("datas no fuso de Brasília", () => {
+  it("toLocalDate", () => {
+    expect(toLocalDate("2026-11-06")).toBe("2026-11-06");
+    expect(toLocalDate("2026-11-02T00:00:00.000Z")).toBe("2026-11-02"); // data de seletor
+    expect(toLocalDate("2026-11-07T01:30:00.000Z")).toBe("2026-11-06"); // 22:30 em Brasília
+    expect(toLocalDate("2026-11-11T01:00:00Z")).toBe("2026-11-10");
+    expect(toLocalDate("2026-11-07 01:30:00")).toBe("2026-11-06"); // Odoo, UTC sem fuso
+    expect(() => toLocalDate("bla")).toThrow(PmoError);
+    expect(todayLocal(new Date("2026-11-07T01:30:00Z"))).toBe("2026-11-06");
   });
 });

@@ -53,20 +53,20 @@ export function prioritizePortfolio(
   weights: PriorityWeights = DEFAULT_PRIORITY_WEIGHTS,
 ): PrioritizedItem[] {
   const w = Object.values(weights);
-  if (w.some((x) => !(x >= 0)) || w.reduce((a, b) => a + b, 0) <= 0) {
+  if (w.some((x) => !(Number.isFinite(x) && x >= 0)) || w.reduce((a, b) => a + b, 0) <= 0) {
     throw new PmoError("Priorização: pesos devem ser ≥ 0 e somar mais que zero.");
   }
   const total = w.reduce((a, b) => a + b, 0);
   const maxBudget = Math.max(0, ...items.map((i) => i.budget));
 
   const scored = items.map((i) => {
-    if (!(i.budget >= 0)) throw new PmoError(`Priorização: orçamento inválido em "${i.id}".`);
+    if (!(Number.isFinite(i.budget) && i.budget >= 0)) throw new PmoError(`Priorização: orçamento inválido em "${i.id}".`);
     const missing: Array<keyof PriorityWeights> = [];
     const nature = i.nature ? NATURE_URGENCY[i.nature] : (missing.push("nature"), 0.5);
     // SPI 1,0 = sem pressão; SPI ≤ 0,5 = pressão máxima.
-    const schedule = i.spi === null ? (missing.push("schedule"), 0.5) : clamp01((1 - i.spi) / 0.5);
+    const schedule = i.spi === null || !Number.isFinite(i.spi) ? (missing.push("schedule"), 0.5) : clamp01((1 - i.spi) / 0.5);
     // Vencido = 1; 90+ dias = 0.
-    const deadline = i.daysToDeadline === null ? (missing.push("deadline"), 0.5) : clamp01(1 - i.daysToDeadline / 90);
+    const deadline = i.daysToDeadline === null || !Number.isFinite(i.daysToDeadline) ? (missing.push("deadline"), 0.5) : clamp01(1 - i.daysToDeadline / 90);
     const budget = maxBudget > 0 ? i.budget / maxBudget : 0;
     const factors = { nature, schedule, deadline, budget };
     const score = r1(

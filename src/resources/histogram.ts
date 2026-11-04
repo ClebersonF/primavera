@@ -48,14 +48,19 @@ export function resourceHistogram(assignments: readonly ResourceAssignment[], op
   const bucketDays = opts.bucketDays ?? 5;
   const defaultCap = opts.defaultCapacity ?? 1;
   if (!Number.isInteger(bucketDays) || bucketDays < 1) throw new PmoError("Histograma: bucketDays deve ser inteiro ≥ 1.");
-  if (!(defaultCap > 0)) throw new PmoError("Histograma: capacidade padrão deve ser > 0.");
+  if (!(Number.isFinite(defaultCap) && defaultCap > 0)) throw new PmoError("Histograma: capacidade padrão deve ser > 0.");
 
-  let end = opts.horizon ?? 0;
+  const horizon = opts.horizon ?? 0;
+  if (!Number.isInteger(horizon) || horizon < 0 || horizon > 36_500) throw new PmoError("Histograma: horizon deve ser inteiro entre 0 e 36500.");
+  for (const [k, v] of Object.entries(opts.capacities ?? {})) {
+    if (!(Number.isFinite(v) && v > 0)) throw new PmoError(`Histograma: capacidade inválida para "${k}".`);
+  }
+  let end = horizon;
   for (const a of assignments) {
     const units = a.units ?? 1;
     if (!a.resource.trim()) throw new PmoError("Histograma: recurso sem nome.");
-    if (!(units > 0)) throw new PmoError(`Histograma: unidades inválidas para "${a.resource}".`);
-    if (!(a.start >= 0) || a.finish < a.start) throw new PmoError(`Histograma: intervalo inválido para "${a.resource}".`);
+    if (!(Number.isFinite(units) && units > 0)) throw new PmoError(`Histograma: unidades inválidas para "${a.resource}".`);
+    if (!Number.isInteger(a.start) || !Number.isInteger(a.finish) || a.start < 0 || a.finish < a.start || a.finish > 36_500) throw new PmoError(`Histograma: intervalo inválido para "${a.resource}".`);
     end = Math.max(end, a.finish);
   }
   const nBuckets = Math.max(1, Math.ceil(end / bucketDays));

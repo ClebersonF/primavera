@@ -14,3 +14,26 @@ export function parseIsoDate(date: string): number {
   if (new Date(t).toISOString().slice(0, 10) !== date) throw new PmoError(`Data inexistente: ${date}`);
   return t;
 }
+
+const BR_TZ = "America/Sao_Paulo";
+const brDay = new Intl.DateTimeFormat("en-CA", { timeZone: BR_TZ, year: "numeric", month: "2-digit", day: "2-digit" });
+
+/**
+ * Data civil (YYYY-MM-DD) de um instante ISO no fuso de Brasília.
+ * - "YYYY-MM-DD" passa como está.
+ * - Meia-noite UTC exata ("…T00:00:00Z") é tratada como data sem hora (valor de seletor de data).
+ * - Data-hora sem fuso (formato do Odoo, "YYYY-MM-DD HH:MM:SS") é lida como UTC.
+ */
+export function toLocalDate(iso: string): string {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) return (parseIsoDate(iso), iso);
+  if (/^\d{4}-\d{2}-\d{2}[T ]00:00(:00(\.0+)?)?(Z|\+00:00)?$/.test(iso)) return (parseIsoDate(iso.slice(0, 10)), iso.slice(0, 10));
+  const hasZone = /(Z|[+-]\d{2}:?\d{2})$/.test(iso);
+  const t = Date.parse(hasZone ? iso : `${iso.replace(" ", "T")}Z`);
+  if (!Number.isFinite(t)) throw new PmoError(`Data inválida: ${String(iso)}`);
+  return brDay.format(new Date(t));
+}
+
+/** Hoje (data civil) no fuso de Brasília. */
+export function todayLocal(now: Date = new Date()): string {
+  return brDay.format(now);
+}

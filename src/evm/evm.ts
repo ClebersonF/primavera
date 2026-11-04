@@ -54,7 +54,10 @@ export function computeEvm(input: EvmInput): EvmResult {
   let pv = 0;
   let ev = 0;
   for (const a of activities) {
-    if (!(a.plannedCost >= 0) || !(a.percentComplete >= 0 && a.percentComplete <= 100) || a.finish < a.start) {
+    if (
+      !Number.isFinite(a.plannedCost) || !Number.isFinite(a.start) || !Number.isFinite(a.finish) ||
+      !(a.plannedCost >= 0) || !(a.percentComplete >= 0 && a.percentComplete <= 100) || a.finish < a.start
+    ) {
       throw new PmoError(`EVM: atividade "${a.id}" com custo, percentual ou datas inválidos.`);
     }
     const dur = a.finish - a.start;
@@ -68,13 +71,18 @@ export function computeEvm(input: EvmInput): EvmResult {
   ev = r2(ev);
 
   const ac = input.actualCost ?? null;
-  if (ac !== null && !(ac >= 0)) throw new PmoError("EVM: custo real inválido.");
-  const spi = pv > 0 ? r2(ev / pv) : null;
-  const cpi = ac !== null && ac > 0 ? r2(ev / ac) : null;
-  const eac = ac !== null && cpi !== null && cpi > 0 ? r2(bac / (ev / ac)) : null;
+  if (ac !== null && !(Number.isFinite(ac) && ac >= 0)) throw new PmoError("EVM: custo real inválido.");
+  // Índices e status usam o valor sem arredondar; só a exibição é arredondada.
+  const spiRaw = pv > 0 ? ev / pv : null;
+  const cpiRaw = ac !== null && ac > 0 ? ev / ac : null;
+  const spi = spiRaw === null ? null : r2(spiRaw);
+  const cpi = cpiRaw === null ? null : r2(cpiRaw);
+  const eac = ac !== null && cpiRaw !== null && cpiRaw > 0 ? r2(bac / cpiRaw) : null;
   // Sem valor planejado, mas já com trabalho concluído: à frente do plano (SPI indefinido).
   const status: ScheduleStatus =
-    spi === null ? (pv === 0 && ev > 0 ? "adiantado" : "sem_base") : spi < 0.95 ? "atrasado" : spi > 1.05 ? "adiantado" : "no_prazo";
+    spiRaw === null
+      ? pv === 0 && ev > 0 ? "adiantado" : "sem_base"
+      : spiRaw < 0.95 ? "atrasado" : spiRaw > 1.05 ? "adiantado" : "no_prazo";
 
   return {
     asOfDay,

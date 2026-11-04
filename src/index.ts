@@ -32,3 +32,4 @@ export * from "./licensing/graprohab";
 export * from "./evm/evm";
 export * from "./resources/histogram";
 export * from "./portfolio/prioritize";
+export { toLocalDate, todayLocal } from "./dates";

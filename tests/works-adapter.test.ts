@@ -98,3 +98,23 @@ describe("workToWbsInputs", () => {
     expect(none.totalPlannedCost).toBe(0);
   });
 });
+
+describe("prazo planejado vs. conclusão", () => {
+  it("usa dueDate como plano; conclusão tardia não esconde o atraso", () => {
+    const w = work({
+      budgetBRL: 1000,
+      activities: [
+        { id: "a", title: "A", status: "done", dueDate: "2026-11-04T12:00:00.000Z", completedAt: "2026-11-13T12:00:00.000Z" },
+        { id: "b", title: "B", status: "todo", dueDate: "2026-11-13T12:00:00.000Z" },
+      ],
+    });
+    const { inputs, assumptions } = workToWbsInputs(w);
+    const leaves = inputs.filter((n) => n.parentId !== null);
+    expect(leaves.map((l) => l.duration)).toEqual([3, 7]); // A: 02–04/11; B: 05–13/11
+    expect(assumptions.join("\n")).not.toMatch(/sem prazo planejado/);
+  });
+  it("sem dueDate, a conclusão serve de prazo e isso é declarado", () => {
+    const { assumptions } = workToWbsInputs(work());
+    expect(assumptions.join("\n")).toMatch(/Mobilização.*sem prazo planejado/);
+  });
+});
