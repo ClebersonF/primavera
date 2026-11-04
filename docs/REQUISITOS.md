@@ -56,7 +56,7 @@ Atualizado em 04/11/2026. Legenda: **OK** atendido e validado · **Parcial** ate
 | P10 | Planilha de custos (orçado, comprometido, realizado, previsão, variação) | OK | Aba **Custos** |
 | P11 | Curva S / fluxo de caixa | OK | Tela de cronograma |
 | P12 | Valor agregado (PV, EV, SPI, CPI, EAC, ETC, VAC, TCPI) | OK | `src/evm`; portfólio e aba Custos; PV/EV medidos contra a baseline mais recente |
-| P13 | Portfólio e priorização | Parcial | `/pmo`: ranking multicritério com pesos fixos na tela; matriz prioridade × situação do prazo; sem cenários |
+| P13 | Portfólio e priorização | Parcial | `/pmo`: ranking multicritério com pesos fixos na tela; matriz prioridade × situação do prazo; **cenários "e se"** por obra na aba Cenários (atraso, ± duração e custo por atividade, custo global; compara prazo, custo e caminho crítico sem alterar o plano). Sem cenários de portfólio |
 | P14 | Pedidos de mudança com impacto e aprovação | Parcial | Aba **Mudanças**: fluxo e impacto; aprovação por papel (gerente/diretor); **não** usa a tela de Aprovações da app |
 | P15 | Gestão de riscos | **OK** | Aba **Riscos**: registro (probabilidade × impacto 1–5, status, responsável, resposta, atividade), matriz 5×5 e coluna de riscos no portfólio; sem análise quantitativa (Monte Carlo) |
 | P16 | Códigos de atividade, filtros e layouts, relatórios | Parcial | Grupo (código de atividade) por atividade, filtro por grupo e exportação CSV do cronograma; sem layouts salvos nem relatórios formatados |

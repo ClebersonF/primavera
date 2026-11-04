@@ -4,6 +4,7 @@ import { DEFAULT_CALENDAR, type WorkCalendar } from "../cpm/calendar";
 import { LINK_TYPES, type LinkType } from "../cpm/types";
 import { parseIsoDate } from "../dates";
 import { PmoError } from "../errors";
+import { MAX_SCENARIOS, validateScenario, type Scenario } from "../scenarios/scenario";
 import { assessCbs, splitInvoice, type CbsAssessment, type Purchase, type PurchaseCategory } from "../tax/cbs";
 
 export interface CostEntry {
@@ -112,6 +113,8 @@ export interface WorkPlanning {
   licensing?: LicensingState;
   /** CBS da obra (ausente até ser preenchido). */
   tax?: TaxState;
+  /** Cenários "e se" salvos (não alteram o plano). */
+  scenarios: Scenario[];
 }
 
 export const EMPTY_PLANNING: WorkPlanning = Object.freeze({
@@ -124,6 +127,7 @@ export const EMPTY_PLANNING: WorkPlanning = Object.freeze({
   risks: [],
   history: [],
   resourceRates: {},
+  scenarios: [],
 }) as WorkPlanning;
 export const MAX_HOLIDAYS = 400;
 export const MAX_PREDECESSORS = 50;
@@ -368,7 +372,24 @@ export function normalizePlanning(raw: unknown): WorkPlanning {
   if (isObj(raw.resourceRates)) {
     for (const [k, v] of Object.entries(raw.resourceRates)) if (safeKey(k) && k.length <= 100 && isMoney(v)) resourceRates[k] = v;
   }
-  const result: WorkPlanning = { rev, baselines, costs, changes, activityPlans, holidays: cleanHolidays(raw.holidays), risks, history: history.slice(-MAX_HISTORY), resourceRates };
+  const result: WorkPlanning = { rev, baselines, costs, changes, activityPlans, holidays: cleanHolidays(raw.holidays), risks, history: history.slice(-MAX_HISTORY), resourceRates, scenarios: [] };
+  const scenarios: Scenario[] = [];
+  if (Array.isArray(raw.scenarios)) {
+    const seen = new Set<string>();
+    for (const x of raw.scenarios.slice(0, MAX_SCENARIOS)) {
+      try {
+        validateScenario(x as Scenario);
+        const sc = x as Scenario;
+        if (!seen.has(sc.id) && safeKey(sc.id)) {
+          seen.add(sc.id);
+          scenarios.push({ id: sc.id, name: sc.name.trim(), ...(sc.costFactor !== undefined ? { costFactor: sc.costFactor } : {}), changes: sc.changes.map((c) => ({ ...c })) });
+        }
+      } catch {
+        /* cenário inválido: descartado */
+      }
+    }
+  }
+  result.scenarios = scenarios;
   const tax = raw.tax === undefined ? null : cleanTax(raw.tax);
   if (tax) result.tax = tax;
   const licensing = raw.licensing === undefined ? null : cleanLicensing(raw.licensing);
@@ -514,6 +535,27 @@ export function assessWorkCbs(budget: number, state: TaxState = EMPTY_TAX): { as
   return { assessment, blendedRate: split.blendedRate };
 }
 
+/** Cria ou atualiza (pelo id) um cenário "e se". */
+export function withScenario(p: WorkPlanning, sc: Scenario): WorkPlanning {
+  validateScenario(sc);
+  if (!safeKey(sc.id)) throw new PmoError("Id de cenário inválido.");
+  const clean: Scenario = { id: sc.id, name: sc.name.trim(), ...(sc.costFactor !== undefined ? { costFactor: sc.costFactor } : {}), changes: sc.changes.map((c) => ({ ...c })) };
+  const i = p.scenarios.findIndex((x) => x.id === clean.id);
+  if (i < 0 && p.scenarios.length >= MAX_SCENARIOS) throw new PmoError(`No máximo ${MAX_SCENARIOS} cenários.`);
+  if (i >= 0 && JSON.stringify(p.scenarios[i]) === JSON.stringify(clean)) return p;
+  return bump(p, { scenarios: i < 0 ? [...p.scenarios, clean] : p.scenarios.map((x, j) => (j === i ? clean : x)) });
+}
+
+export function withoutScenario(p: WorkPlanning, id: string): WorkPlanning {
+  return p.scenarios.some((x) => x.id === id) ? bump(p, { scenarios: p.scenarios.filter((x) => x.id !== id) }) : p;
+}
+
+/** Próximo id sequencial de cenário (CEN-001…). */
+export function nextScenarioId(p: Pick<WorkPlanning, "scenarios">): string {
+  const max = p.scenarios.reduce((m, x) => Math.max(m, Number(/^CEN-(\d+)$/.exec(x.id)?.[1] ?? 0)), 0);
+  return `CEN-${String(max + 1).padStart(3, "0")}`;
+}
+
 /** Substitui a lista de feriados (datas YYYY-MM-DD). */
 export function withHolidays(p: WorkPlanning, holidays: readonly string[]): WorkPlanning {
   if (holidays.length > MAX_HOLIDAYS) throw new PmoError(`No máximo ${MAX_HOLIDAYS} feriados.`);
@@ -572,6 +614,8 @@ export function describePlanningChange(prev: WorkPlanning, next: WorkPlanning): 
   if (!sameJson(prev.holidays, next.holidays)) out.push(`Feriados: ${prev.holidays.length} → ${next.holidays.length}`);
   if (next.baselines.length > prev.baselines.length) out.push(`Linha de base criada: ${next.baselines.at(-1)?.name ?? ""}`);
   else if (!sameJson(prev.baselines, next.baselines)) out.push("Linhas de base alteradas");
+  for (const sc of next.scenarios) if (!prev.scenarios.some((x) => x.id === sc.id)) out.push(`Cenário ${sc.id} criado: ${sc.name}`);
+  for (const sc of prev.scenarios) if (!next.scenarios.some((x) => x.id === sc.id)) out.push(`Cenário ${sc.id} removido`);
   if (!sameJson(prev.tax, next.tax)) out.push("CBS da obra atualizada");
   if (!sameJson(prev.licensing, next.licensing)) out.push("Licenciamento GRAPROHAB atualizado");
   if (!sameJson(prev.resourceRates, next.resourceRates)) out.push("Diárias de recursos alteradas");
