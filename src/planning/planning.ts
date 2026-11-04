@@ -50,6 +50,26 @@ export interface Risk {
   activityId?: string;
 }
 
+export const ISSUE_STATUSES = ["aberta", "em_andamento", "resolvida"] as const;
+export type IssueStatus = (typeof ISSUE_STATUSES)[number];
+export const MAX_ISSUES = 300;
+export const MAX_PROGRAM_LENGTH = 60;
+
+/** Questão (issue): problema que já ocorreu e precisa de ação, diferente do risco, que ainda pode ocorrer. */
+export interface Issue {
+  id: string;
+  title: string;
+  status: IssueStatus;
+  /** 1 (baixa) a 3 (alta). */
+  priority: 1 | 2 | 3;
+  owner?: string;
+  /** Prazo para resolver (YYYY-MM-DD). */
+  dueDate?: string;
+  resolution?: string;
+  /** Atividade afetada (opcional). */
+  activityId?: string;
+}
+
 export const MAX_HISTORY = 300;
 export const MAX_TAX_PURCHASES = 100;
 
@@ -125,6 +145,10 @@ export interface WorkPlanning {
   impact?: ImpactState;
   /** Cenários "e se" salvos (não alteram o plano). */
   scenarios: Scenario[];
+  /** Questões (issues) da obra. */
+  issues: Issue[];
+  /** Programa ou carteira a que o projeto pertence (nível acima do projeto); ausente = sem programa. */
+  program?: string;
 }
 
 /** Dimensões do impacto socioambiental, cada uma de 0 (nenhum) a 5 (muito alto). */
@@ -183,6 +207,7 @@ export const EMPTY_PLANNING: WorkPlanning = Object.freeze({
   history: [],
   resourceRates: {},
   scenarios: [],
+  issues: [],
 }) as WorkPlanning;
 export const MAX_HOLIDAYS = 400;
 export const MAX_PREDECESSORS = 50;
@@ -322,6 +347,25 @@ function cleanRisk(v: unknown): Risk | null {
   return r;
 }
 
+function cleanIssue(v: unknown): Issue | null {
+  if (!isObj(v) || typeof v.id !== "string" || v.id === "" || !safeKey(v.id)) return null;
+  const title = optText(v.title, 200);
+  if (!title) return null;
+  if (typeof v.status !== "string" || !(ISSUE_STATUSES as readonly string[]).includes(v.status)) return null;
+  if (v.priority !== 1 && v.priority !== 2 && v.priority !== 3) return null;
+  const owner = optText(v.owner, 100);
+  const resolution = optText(v.resolution, 1000);
+  const activityId = optText(v.activityId, 200);
+  if (owner === null || resolution === null || activityId === null) return null;
+  if (v.dueDate !== undefined && v.dueDate !== "" && !validDate(v.dueDate)) return null;
+  const q: Issue = { id: v.id, title, status: v.status as IssueStatus, priority: v.priority };
+  if (owner) q.owner = owner;
+  if (typeof v.dueDate === "string" && v.dueDate !== "") q.dueDate = v.dueDate;
+  if (resolution) q.resolution = resolution;
+  if (activityId) q.activityId = activityId;
+  return q;
+}
+
 const short = (v: unknown, max: number): string | null => (typeof v === "string" && v.length <= max ? v : null);
 
 /** Valida o estado do licenciamento; devolve null se algum campo for inválido. */
@@ -457,6 +501,17 @@ export function normalizePlanning(raw: unknown): WorkPlanning {
       }
     }
   }
+  const issues: Issue[] = [];
+  if (Array.isArray(raw.issues)) {
+    const seenIssue = new Set<string>();
+    for (const q of raw.issues.slice(0, MAX_ISSUES)) {
+      const c = cleanIssue(q);
+      if (c && !seenIssue.has(c.id)) {
+        seenIssue.add(c.id);
+        issues.push(c);
+      }
+    }
+  }
   const history: HistoryEntry[] = [];
   if (Array.isArray(raw.history)) {
     for (const h of raw.history) {
@@ -469,7 +524,7 @@ export function normalizePlanning(raw: unknown): WorkPlanning {
   if (isObj(raw.resourceRates)) {
     for (const [k, v] of Object.entries(raw.resourceRates)) if (safeKey(k) && k.length <= 100 && isMoney(v)) resourceRates[k] = v;
   }
-  const result: WorkPlanning = { rev, baselines, costs, changes, activityPlans, holidays: cleanHolidays(raw.holidays), risks, history: history.slice(-MAX_HISTORY), resourceRates, scenarios: [] };
+  const result: WorkPlanning = { rev, baselines, costs, changes, activityPlans, holidays: cleanHolidays(raw.holidays), risks, history: history.slice(-MAX_HISTORY), resourceRates, scenarios: [], issues };
   const scenarios: Scenario[] = [];
   if (Array.isArray(raw.scenarios)) {
     const seen = new Set<string>();
@@ -493,6 +548,8 @@ export function normalizePlanning(raw: unknown): WorkPlanning {
   if (licensing) result.licensing = licensing;
   const impact = raw.impact === undefined ? null : cleanImpact(raw.impact);
   if (impact) result.impact = impact;
+  const program = optText(raw.program, MAX_PROGRAM_LENGTH);
+  if (program) result.program = program;
   if (Number.isInteger(raw.primaryBaseline) && (raw.primaryBaseline as number) >= 0 && (raw.primaryBaseline as number) < baselines.length) {
     result.primaryBaseline = raw.primaryBaseline as number;
   }
@@ -654,6 +711,41 @@ export function assessWorkCbs(budget: number, state: TaxState = EMPTY_TAX): { as
 }
 
 /** Cria ou atualiza (pelo id) um cenário "e se". */
+/** Cria ou atualiza (pelo id) uma questão. */
+export function withIssue(p: WorkPlanning, issue: Issue): WorkPlanning {
+  const clean = cleanIssue(issue);
+  if (!clean) throw new PmoError("Questão inválida: título, situação, prioridade (1 a 3) e prazo no formato AAAA-MM-DD.");
+  const i = p.issues.findIndex((q) => q.id === clean.id);
+  if (i < 0 && p.issues.length >= MAX_ISSUES) throw new PmoError(`No máximo ${MAX_ISSUES} questões.`);
+  if (i >= 0 && JSON.stringify(p.issues[i]) === JSON.stringify(clean)) return p;
+  return bump(p, { issues: i < 0 ? [...p.issues, clean] : p.issues.map((q, j) => (j === i ? clean : q)) });
+}
+
+export function withoutIssue(p: WorkPlanning, id: string): WorkPlanning {
+  if (!p.issues.some((q) => q.id === id)) return p;
+  return bump(p, { issues: p.issues.filter((q) => q.id !== id) });
+}
+
+/** Próximo id livre no formato Q-1, Q-2… */
+export function nextIssueId(p: Pick<WorkPlanning, "issues">): string {
+  const max = p.issues.reduce((m, q) => Math.max(m, Number(/^Q-(\d+)$/.exec(q.id)?.[1] ?? 0)), 0);
+  return `Q-${max + 1}`;
+}
+
+/** Questões ainda não resolvidas cujo prazo já passou em `today` (YYYY-MM-DD). */
+export function overdueIssues(issues: readonly Issue[], today: string): Issue[] {
+  return issues.filter((q) => q.status !== "resolvida" && q.dueDate !== undefined && q.dueDate < today);
+}
+
+/** Define (ou limpa, com texto vazio) o programa do projeto. */
+export function withProgram(p: WorkPlanning, program: string | undefined): WorkPlanning {
+  const clean = program === undefined ? undefined : optText(program, MAX_PROGRAM_LENGTH);
+  if (clean === null) throw new PmoError(`Programa: no máximo ${MAX_PROGRAM_LENGTH} caracteres.`);
+  if (clean === p.program) return p;
+  const { program: _old, ...rest } = p;
+  return bump(clean ? { ...rest, program: clean } as WorkPlanning : rest as WorkPlanning, {});
+}
+
 /** Grava o impacto socioambiental do projeto. */
 export function withImpact(p: WorkPlanning, state: ImpactState): WorkPlanning {
   const clean = cleanImpact(state);
@@ -760,6 +852,13 @@ export function describePlanningChange(prev: WorkPlanning, next: WorkPlanning): 
     else if (!sameJson(old, r)) out.push(`Risco ${r.id} atualizado${old.status !== r.status ? ` (${old.status} → ${r.status})` : ""}`);
   }
   for (const r of prev.risks) if (!next.risks.some((x) => x.id === r.id)) out.push(`Risco ${r.id} removido`);
+  for (const q of next.issues) {
+    const old = prev.issues.find((x) => x.id === q.id);
+    if (!old) out.push(`Questão ${q.id} registrada`);
+    else if (!sameJson(old, q)) out.push(`Questão ${q.id} atualizada${old.status !== q.status ? ` (${old.status} → ${q.status})` : ""}`);
+  }
+  for (const q of prev.issues) if (!next.issues.some((x) => x.id === q.id)) out.push(`Questão ${q.id} removida`);
+  if (prev.program !== next.program) out.push(next.program ? `Programa: ${next.program}` : "Programa removido");
   return out;
 }
 

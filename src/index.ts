@@ -37,3 +37,5 @@ export * from "./portfolio/prioritize";
 export { toLocalDate, todayLocal } from "./dates";
 export * from "./planning/planning";
 export * from "./deadlines/deadlines";
+export * from "./alerts/thresholds";
+export * from "./portfolio/programs";
