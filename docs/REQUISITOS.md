@@ -46,16 +46,16 @@ Atualizado em 04/11/2026. Legenda: **OK** atendido e validado · **Parcial** ate
 |---|---|---|---|
 | P1 | EAP/WBS com rollup de prazo, custo e progresso | Parcial | Motor completo; a obra vira EAP de um nível (raiz + atividades). Não há edição de EAP na tela |
 | P2 | CPM, vínculos FS/SS/FF/SF com lag, folga total e livre, caminho crítico | **OK** | Aba **Atividades** do planejamento: predecessoras por código ("1.2 SS+2"), tipos FS/SS/FF/SF e defasagem; ciclos são recusados ao salvar |
-| P3 | Restrições de data | Parcial | "Não iniciar antes de" (SNET) editável por atividade; sem "terminar até"/"obrigatória" |
+| P3 | Restrições de data | Parcial | "Não iniciar antes de" (SNET) move a atividade; **"Terminar até"** (prazo-limite) mostra folga ou violação em dias úteis na aba Atividades, no Gantt (selo "prazo violado") e no CSV, **sem mover** a atividade. Sem restrição "obrigatória" |
 | P4 | Calendários e feriados | Parcial | Feriados cadastráveis por obra (aba Atividades) e usados em datas, hoje e EVM; um calendário por obra, sem calendários por atividade |
 | P5 | Gantt e caminho crítico | OK | `/obras/$id/cronograma` |
 | P6 | Gantt com barras da baseline | **OK** | Barra fina da baseline mais recente sobre cada atividade, com liga/desliga na tela do cronograma |
-| P7 | Linhas de base múltiplas e comparação | Parcial | Aba **Linha de base**; EVM usa a mais recente (sem escolher qual é a "primária") |
+| P7 | Linhas de base múltiplas e comparação | **OK** | Aba **Linha de base**: várias baselines, comparação e botão **"Usar como primária"**; a primária (ou a mais recente, se nenhuma foi escolhida) é a base do EVM e das barras do Gantt |
 | P8 | Atualização de progresso | **OK** | % concluído editável por atividade e **datas reais de início e término** (término real = 100% se o % não for informado); barra de execução real no Gantt e colunas no CSV |
 | P9 | Recursos e histograma | Parcial | `/pmo/recursos`: carga por responsável (1 pessoa por atividade), **diária por responsável e custo de mão de obra**, **sugestão de nivelamento** (não altera o plano). Sem calendário de recursos nem várias unidades por atividade na tela |
 | P10 | Planilha de custos (orçado, comprometido, realizado, previsão, variação) | OK | Aba **Custos** |
 | P11 | Curva S / fluxo de caixa | OK | Tela de cronograma |
-| P12 | Valor agregado (PV, EV, SPI, CPI, EAC, ETC, VAC, TCPI) | OK | `src/evm`; portfólio e aba Custos; PV/EV medidos contra a baseline mais recente |
+| P12 | Valor agregado (PV, EV, SPI, CPI, EAC, ETC, VAC, TCPI) | OK | `src/evm`; portfólio e aba Custos; PV/EV medidos contra a baseline primária |
 | P13 | Portfólio e priorização | Parcial | `/pmo`: ranking multicritério com pesos fixos na tela; matriz prioridade × situação do prazo; **cenários "e se"** por obra na aba Cenários (atraso, ± duração e custo por atividade, custo global; compara prazo, custo e caminho crítico sem alterar o plano). Sem cenários de portfólio |
 | P14 | Pedidos de mudança com impacto e aprovação | Parcial | Aba **Mudanças**: fluxo e impacto; aprovação por papel (gerente/diretor); **não** usa a tela de Aprovações da app |
 | P15 | Gestão de riscos | **OK** | Aba **Riscos**: registro (probabilidade × impacto 1–5, status, responsável, resposta, atividade), matriz 5×5 e coluna de riscos no portfólio; sem análise quantitativa (Monte Carlo) |
