@@ -41,7 +41,7 @@ Atualizado em 04/11/2026. Legenda: **OK** atendido e validado · **Parcial** ate
 | G4 | Faixas de APP (Lei 12.651, art. 4º, I), nascentes 50 m, faixa não edificável 15 m | OK | `appBufferMeters`; tela |
 | G5 | Coerência do quadro de áreas entre planta, memorial e cartas | OK | `checkAreaTableConsistency`; seção "Quadro de áreas" |
 | G6 | Prazos reais de cada etapa | **Aberto** | O manual não os define; os usados são estimativas editáveis |
-| G7 | Acompanhar vários processos por empreendimento/imóvel | Parcial | Um processo de licenciamento **por obra**, gravado com a obra (etapas, prazos, documentos, áreas, Comunique-se); sem cadastro próprio de empreendimento nem vários processos por obra |
+| G7 | Acompanhar vários processos por empreendimento/imóvel | Parcial | O processo principal (GRAPROHAB) mais até 20 processos adicionais **por obra** (fases, outorgas, licenças), cada um com etapas, prazos, documentos, áreas e certidão, gravados com a obra; o portfólio mostra quantos há e quantos têm certidão. Sem cadastro próprio de empreendimento nem processo compartilhado entre obras |
 
 ## 4. Paridade funcional com o Oracle Primavera (P6 / Unifier)
 
@@ -76,7 +76,7 @@ Atualizado em 04/11/2026. Legenda: **OK** atendido e validado · **Parcial** ate
 | E4 | Totais de impacto do portfólio e aviso de projetos não avaliados | OK | Cartões em `/pmo`; fator ausente vale neutro e é marcado com "*" |
 | E5 | Rigor dos números de impacto (metodologia, evidência, ODS) | Parcial | Aba Impacto tem **ODS (1–17)**, **metodologia** e **evidência** (texto); o portfólio mostra projetos por ODS e avisa os que têm impacto sem metodologia; o CSV leva tudo. Continua sem validação externa, sem anexo de arquivo, sem inventário de carbono nem mapeamento GRI. A metodologia em si precisa ser definida pela CALM |
 | E6 | Pesos da estratégia compartilhados pela equipe | **Aberto** | Pesos personalizados ficam só no navegador; os presets são iguais para todos. Compartilhar exige gravar em local central (Odoo) |
-| E7 | Licenciamento ambiental (GRAPROHAB/CETESB) por projeto | Parcial | Ver seção 3 (G7) |
+| E7 | Licenciamento ambiental (GRAPROHAB/CETESB) por projeto | OK | Vários processos por projeto (G7); os prazos de cada etapa seguem como estimativas editáveis (G6) |
 
 ## 4B. GAP consolidado em relação ao Primavera (P6 e Unifier)
 
@@ -88,7 +88,7 @@ Cobertura real hoje: motor de cronograma e valor agregado completo; planejamento
 | Atribuição de recursos e funções (unidades, curvas, calendário de recurso) | P6 (doc. lida) | Parcial | 1 responsável por atividade, diária e nivelamento sugerido; sem funções, unidades nem calendário de recurso |
 | Códigos de atividade e campos definidos pelo usuário | P6 (doc. lida) | Parcial | Um código ("Grupo") por atividade; sem campos próprios e sem hierarquia de códigos |
 | Layouts, filtros salvos e assistente de relatórios | P6 (doc. lida) | Parcial | Filtro por grupo, dois CSVs e impressão/PDF do portfólio com a identidade da marca; sem layouts salvos nem assistente de relatórios |
-| Limiares (management by threshold), questões (issues) | P6 (doc. lida) | Parcial | Questões com responsável e prazo por obra; alertas por limiar (SPI, CPI, prazo, riscos, questões vencidas) no portfólio, com limiares padrão fixos (não editáveis na tela) |
+| Limiares (management by threshold), questões (issues) | P6 (doc. lida) | Parcial | Questões com responsável e prazo por obra; alertas por limiar (SPI, CPI, prazo, riscos, questões vencidas) no portfólio, com limiares editáveis na tela (salvos no navegador de cada usuário, não na organização) |
 | Produtos de trabalho e documentos por atividade | P6 (doc. lida) | **Não há** | A app tem módulo de documentos geral, sem vínculo com a atividade do planejamento |
 | Visualizador de lógica (diagrama de rede) | P6 (doc. lida) | **Não há** | Só Gantt |
 | Cópia de projeto e what-if entre projetos | não confirmado na doc. lida | Parcial | Cenários por obra; sem cenário de portfólio |

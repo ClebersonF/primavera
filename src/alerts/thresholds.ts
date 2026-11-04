@@ -73,3 +73,21 @@ export function evaluateThresholds(m: ThresholdMetrics, rules: ThresholdRules = 
   if ((m.deadlineViolations ?? 0) > 0) out.push({ code: "restricoes", severity: "critico", message: `${m.deadlineViolations} atividade(s) com “terminar até” violado` });
   return out.sort((a, b) => Number(b.severity === "critico") - Number(a.severity === "critico"));
 }
+
+/** Lê limiares salvos (JSON de origem desconhecida): campos ausentes usam o padrão; inválido devolve null. */
+export function parseThresholds(raw: unknown): ThresholdRules | null {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
+  const out = { ...DEFAULT_THRESHOLDS };
+  for (const k of Object.keys(DEFAULT_THRESHOLDS) as (keyof ThresholdRules)[]) {
+    const v = (raw as Record<string, unknown>)[k];
+    if (v === undefined) continue;
+    if (typeof v !== "number" || !Number.isFinite(v) || v < 0 || v > 100_000) return null;
+    out[k] = v;
+  }
+  try {
+    validateThresholds(out);
+  } catch {
+    return null;
+  }
+  return out;
+}

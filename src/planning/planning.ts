@@ -104,6 +104,14 @@ export interface LicensingState {
   areas: Record<string, Record<string, string>>;
 }
 
+export const MAX_LICENSE_PROCESSES = 20;
+
+/** Processo de licenciamento adicional (o principal continua em `licensing`): mesmo estado, com id e nome. */
+export interface LicenseProcess extends LicensingState {
+  id: string;
+  name: string;
+}
+
 export const EMPTY_LICENSING: LicensingState = Object.freeze({ start: "", withComunique: false, days: {}, present: [], issuedOn: "", river: "20", areas: {} }) as LicensingState;
 
 /** Linha do histórico de alterações do planejamento. */
@@ -139,6 +147,8 @@ export interface WorkPlanning {
   resourceRates: Record<string, number>;
   /** Licenciamento GRAPROHAB da obra (ausente até ser preenchido). */
   licensing?: LicensingState;
+  /** Outros processos de licenciamento do mesmo projeto (fases, órgãos, outorgas). */
+  licenses: LicenseProcess[];
   /** CBS da obra (ausente até ser preenchido). */
   tax?: TaxState;
   /** Impacto socioambiental do projeto (ausente até ser preenchido). */
@@ -208,6 +218,7 @@ export const EMPTY_PLANNING: WorkPlanning = Object.freeze({
   resourceRates: {},
   scenarios: [],
   issues: [],
+  licenses: [],
 }) as WorkPlanning;
 export const MAX_HOLIDAYS = 400;
 export const MAX_PREDECESSORS = 50;
@@ -404,6 +415,14 @@ export function cleanLicensing(v: unknown): LicensingState | null {
   return { start, withComunique: v.withComunique, days, present, issuedOn, river, areas };
 }
 
+function cleanLicenseProcess(v: unknown): LicenseProcess | null {
+  if (!isObj(v) || typeof v.id !== "string" || v.id === "" || !safeKey(v.id) || v.id.length > 40) return null;
+  const name = optText(v.name, 80);
+  const state = cleanLicensing(v);
+  if (!name || state === null) return null;
+  return { id: v.id, name, ...state };
+}
+
 /** Valida o estado de CBS; devolve null se algum campo for inválido. */
 export function cleanImpact(v: unknown): ImpactState | null {
   if (!isObj(v) || !isObj(v.scores)) return null;
@@ -512,6 +531,17 @@ export function normalizePlanning(raw: unknown): WorkPlanning {
       }
     }
   }
+  const licenses: LicenseProcess[] = [];
+  if (Array.isArray(raw.licenses)) {
+    const seenLic = new Set<string>();
+    for (const l of raw.licenses.slice(0, MAX_LICENSE_PROCESSES)) {
+      const c = cleanLicenseProcess(l);
+      if (c && !seenLic.has(c.id)) {
+        seenLic.add(c.id);
+        licenses.push(c);
+      }
+    }
+  }
   const history: HistoryEntry[] = [];
   if (Array.isArray(raw.history)) {
     for (const h of raw.history) {
@@ -524,7 +554,7 @@ export function normalizePlanning(raw: unknown): WorkPlanning {
   if (isObj(raw.resourceRates)) {
     for (const [k, v] of Object.entries(raw.resourceRates)) if (safeKey(k) && k.length <= 100 && isMoney(v)) resourceRates[k] = v;
   }
-  const result: WorkPlanning = { rev, baselines, costs, changes, activityPlans, holidays: cleanHolidays(raw.holidays), risks, history: history.slice(-MAX_HISTORY), resourceRates, scenarios: [], issues };
+  const result: WorkPlanning = { rev, baselines, costs, changes, activityPlans, holidays: cleanHolidays(raw.holidays), risks, history: history.slice(-MAX_HISTORY), resourceRates, scenarios: [], issues, licenses };
   const scenarios: Scenario[] = [];
   if (Array.isArray(raw.scenarios)) {
     const seen = new Set<string>();
@@ -684,6 +714,33 @@ export function withLicensing(p: WorkPlanning, state: LicensingState): WorkPlann
   return bump(p, { licensing: clean });
 }
 
+/** Cria ou atualiza (pelo id) um processo de licenciamento adicional. */
+export function withLicenseProcess(p: WorkPlanning, proc: LicenseProcess): WorkPlanning {
+  const clean = cleanLicenseProcess(proc);
+  if (clean === null) throw new PmoError("Processo de licenciamento inválido: informe um nome (até 80 caracteres) e dados no formato correto.");
+  const i = p.licenses.findIndex((l) => l.id === clean.id);
+  if (i < 0 && p.licenses.length >= MAX_LICENSE_PROCESSES) throw new PmoError(`No máximo ${MAX_LICENSE_PROCESSES} processos adicionais.`);
+  if (i >= 0 && JSON.stringify(p.licenses[i]) === JSON.stringify(clean)) return p;
+  return bump(p, { licenses: i < 0 ? [...p.licenses, clean] : p.licenses.map((l, j) => (j === i ? clean : l)) });
+}
+
+export function withoutLicenseProcess(p: WorkPlanning, id: string): WorkPlanning {
+  if (!p.licenses.some((l) => l.id === id)) return p;
+  return bump(p, { licenses: p.licenses.filter((l) => l.id !== id) });
+}
+
+/** Próximo id livre no formato L-1, L-2… */
+export function nextLicenseId(p: Pick<WorkPlanning, "licenses">): string {
+  const max = p.licenses.reduce((m, l) => Math.max(m, Number(/^L-(\d+)$/.exec(l.id)?.[1] ?? 0)), 0);
+  return `L-${max + 1}`;
+}
+
+/** Resumo dos processos do projeto (o principal conta só se tiver sido preenchido): total, iniciados e com certidão emitida. */
+export function licensingSummary(p: Pick<WorkPlanning, "licensing" | "licenses">): { total: number; started: number; issued: number } {
+  const all: LicensingState[] = [...(p.licensing && JSON.stringify(p.licensing) !== JSON.stringify(EMPTY_LICENSING) ? [p.licensing] : []), ...p.licenses];
+  return { total: all.length, started: all.filter((l) => l.start !== "").length, issued: all.filter((l) => l.issuedOn !== "").length };
+}
+
 export const EMPTY_TAX: TaxState = Object.freeze({ engineeringShare: 1, purchases: [] }) as TaxState;
 
 /** Grava o estado de CBS (valida; sem mudança devolve o mesmo objeto). */
@@ -838,6 +895,12 @@ export function describePlanningChange(prev: WorkPlanning, next: WorkPlanning): 
   if (!sameJson(prev.impact, next.impact)) out.push("Impacto socioambiental atualizado");
   if (!sameJson(prev.tax, next.tax)) out.push("CBS da obra atualizada");
   if (!sameJson(prev.licensing, next.licensing)) out.push("Licenciamento GRAPROHAB atualizado");
+  for (const l of next.licenses) {
+    const old = prev.licenses.find((x) => x.id === l.id);
+    if (!old) out.push(`Processo de licenciamento ${l.id} criado: ${l.name}`);
+    else if (!sameJson(old, l)) out.push(`Processo de licenciamento ${l.id} atualizado: ${l.name}`);
+  }
+  for (const l of prev.licenses) if (!next.licenses.some((x) => x.id === l.id)) out.push(`Processo de licenciamento ${l.id} removido`);
   if (!sameJson(prev.resourceRates, next.resourceRates)) out.push("Diárias de recursos alteradas");
   const cost = keysChanged(prev.costs, next.costs);
   if (cost.length) out.push(`Custos alterados em ${cost.length} atividade(s)`);
