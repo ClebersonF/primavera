@@ -26,7 +26,7 @@ Atualizado em 04/11/2026. Legenda: **OK** atendido e validado · **Parcial** ate
 | C7 | Lastro contratual: aditivo com as fatias de serviço e software | OK | Texto-base do aditivo gerado na tela |
 | C8 | Neutralidade B2B (CBS destacada vira crédito do comprador) | Parcial | Citada no alerta de caixa; sem cálculo do lado do cliente |
 | C9 | Lucro Presumido: IRPJ/CSLL com presunção de 32% | Parcial | Nota informativa; sem cálculo de IRPJ/CSLL |
-| C10 | Aplicação ao faturamento e aos custos reais da app (Odoo) | **Aberto** | A tela é calculadora; não lê notas fiscais nem compras reais |
+| C10 | Aplicação ao faturamento e aos custos reais da app (Odoo) | Parcial | Aba **Tributos (CBS)** do planejamento da obra: faturamento = orçamento da obra (engenharia × software), notas de compra com CBS destacada e crédito elegível, saldo e transporte, gravado com a obra. **Sem leitura de notas reais do Odoo**: o conector (`odoo-patrimony`) não autoriza `account.move`; liberar exige alterar e publicar a função e conceder acesso a dados financeiros |
 
 ## 3. GRAPROHAB / CETESB
 

@@ -68,3 +68,27 @@ describe("licenciamento persistido", () => {
     expect(normalizePlanning({ licensing: { start: 5 } }).licensing).toBeUndefined();
   });
 });
+
+import { assessWorkCbs, cleanTax, EMPTY_TAX, nextPurchaseId, withTax } from "../src";
+
+describe("CBS da obra", () => {
+  const st = { engineeringShare: 0.6, purchases: [{ id: "NF-001", category: "cloud" as const, cbsDestacada: 100, supplierIsRegularPJ: true }, { id: "NF-002", category: "folha_clt" as const, cbsDestacada: 50, supplierIsRegularPJ: true }] };
+  it("apura débito, crédito elegível e saldo", () => {
+    const { assessment, blendedRate } = assessWorkCbs(10000, st);
+    expect(assessment.debit).toBeCloseTo(6000 * 0.0791 + 4000 * 0.113, 2);
+    expect(assessment.credit).toBe(100);
+    expect(blendedRate).toBeGreaterThan(0.09);
+    expect(assessWorkCbs(0).assessment.position).toBe("zero");
+  });
+  it("grava, valida e numera", () => {
+    const p = withTax(EMPTY_PLANNING, st);
+    expect(withTax(p, st)).toBe(p);
+    expect(withTax(EMPTY_PLANNING, EMPTY_TAX)).toBe(EMPTY_PLANNING);
+    expect(nextPurchaseId(st)).toBe("NF-003");
+    expect(() => withTax(p, { ...st, engineeringShare: 1.2 })).toThrow(PmoError);
+    expect(() => withTax(p, { ...st, purchases: [st.purchases[0]!, st.purchases[0]!] })).toThrow(PmoError);
+    expect(cleanTax({ ...st, purchases: [{ ...st.purchases[0], category: "xx" }] })).toBeNull();
+    expect(normalizePlanning(JSON.parse(JSON.stringify(p))).tax).toEqual(p.tax);
+    expect(normalizePlanning({ tax: { engineeringShare: "x" } }).tax).toBeUndefined();
+  });
+});

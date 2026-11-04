@@ -4,6 +4,7 @@ import { DEFAULT_CALENDAR, type WorkCalendar } from "../cpm/calendar";
 import { LINK_TYPES, type LinkType } from "../cpm/types";
 import { parseIsoDate } from "../dates";
 import { PmoError } from "../errors";
+import { assessCbs, splitInvoice, type CbsAssessment, type Purchase, type PurchaseCategory } from "../tax/cbs";
 
 export interface CostEntry {
   committed?: number;
@@ -43,6 +44,21 @@ export interface Risk {
 }
 
 export const MAX_HISTORY = 300;
+export const MAX_TAX_PURCHASES = 100;
+
+const PURCHASE_CATEGORIES: readonly PurchaseCategory[] = ["cloud", "software", "api", "utilidades", "aluguel", "combustivel", "manutencao_frota", "equipamento_campo", "laudos_analises", "folha_clt", "pro_labore", "rpa_autonomo", "uso_pessoal", "outro"];
+
+/** Nota de compra da obra, para o crédito de CBS. */
+export interface TaxPurchase extends Purchase {
+  id: string;
+}
+
+/** Tributação (CBS) da obra: fatia de serviços de engenharia no faturamento e compras com CBS destacada. */
+export interface TaxState {
+  /** 0..1: parte do faturamento (orçamento da obra) que é serviço de engenharia; o resto é licença de software. */
+  engineeringShare: number;
+  purchases: TaxPurchase[];
+}
 
 /** Estado do licenciamento GRAPROHAB/CETESB da obra, como digitado na tela (textos). */
 export interface LicensingState {
@@ -94,6 +110,8 @@ export interface WorkPlanning {
   resourceRates: Record<string, number>;
   /** Licenciamento GRAPROHAB da obra (ausente até ser preenchido). */
   licensing?: LicensingState;
+  /** CBS da obra (ausente até ser preenchido). */
+  tax?: TaxState;
 }
 
 export const EMPTY_PLANNING: WorkPlanning = Object.freeze({
@@ -272,6 +290,28 @@ export function cleanLicensing(v: unknown): LicensingState | null {
   return { start, withComunique: v.withComunique, days, present, issuedOn, river, areas };
 }
 
+/** Valida o estado de CBS; devolve null se algum campo for inválido. */
+export function cleanTax(v: unknown): TaxState | null {
+  if (!isObj(v) || !isNum(v.engineeringShare) || v.engineeringShare < 0 || v.engineeringShare > 1) return null;
+  if (!Array.isArray(v.purchases) || v.purchases.length > MAX_TAX_PURCHASES) return null;
+  const purchases: TaxPurchase[] = [];
+  const seen = new Set<string>();
+  for (const x of v.purchases) {
+    if (!isObj(x) || typeof x.id !== "string" || x.id === "" || x.id.length > 40 || !safeKey(x.id) || seen.has(x.id)) return null;
+    if (typeof x.category !== "string" || !(PURCHASE_CATEGORIES as readonly string[]).includes(x.category)) return null;
+    if (!isMoney(x.cbsDestacada) || typeof x.supplierIsRegularPJ !== "boolean") return null;
+    if (x.linkedToActivity !== undefined && typeof x.linkedToActivity !== "boolean") return null;
+    const d = optText(x.description, 200);
+    if (d === null) return null;
+    seen.add(x.id);
+    const q: TaxPurchase = { id: x.id, category: x.category as PurchaseCategory, cbsDestacada: x.cbsDestacada, supplierIsRegularPJ: x.supplierIsRegularPJ };
+    if (d) q.description = d;
+    if (x.linkedToActivity !== undefined) q.linkedToActivity = x.linkedToActivity;
+    purchases.push(q);
+  }
+  return { engineeringShare: v.engineeringShare, purchases };
+}
+
 function cleanHolidays(v: unknown): string[] {
   if (!Array.isArray(v)) return [];
   return [...new Set(v.filter(validDate))].sort().slice(0, MAX_HOLIDAYS);
@@ -329,6 +369,8 @@ export function normalizePlanning(raw: unknown): WorkPlanning {
     for (const [k, v] of Object.entries(raw.resourceRates)) if (safeKey(k) && k.length <= 100 && isMoney(v)) resourceRates[k] = v;
   }
   const result: WorkPlanning = { rev, baselines, costs, changes, activityPlans, holidays: cleanHolidays(raw.holidays), risks, history: history.slice(-MAX_HISTORY), resourceRates };
+  const tax = raw.tax === undefined ? null : cleanTax(raw.tax);
+  if (tax) result.tax = tax;
   const licensing = raw.licensing === undefined ? null : cleanLicensing(raw.licensing);
   if (licensing) result.licensing = licensing;
   return result;
@@ -446,6 +488,32 @@ export function withLicensing(p: WorkPlanning, state: LicensingState): WorkPlann
   return bump(p, { licensing: clean });
 }
 
+export const EMPTY_TAX: TaxState = Object.freeze({ engineeringShare: 1, purchases: [] }) as TaxState;
+
+/** Grava o estado de CBS (valida; sem mudança devolve o mesmo objeto). */
+export function withTax(p: WorkPlanning, state: TaxState): WorkPlanning {
+  const clean = cleanTax(state);
+  if (clean === null) throw new PmoError("Dados de CBS inválidos: fatia entre 0 e 1, categoria conhecida, CBS maior ou igual a zero e ids únicos.");
+  if (JSON.stringify(clean) === JSON.stringify(p.tax ?? EMPTY_TAX)) return p;
+  return bump(p, { tax: clean });
+}
+
+/** Próximo id sequencial de nota de compra (NF-001…). */
+export function nextPurchaseId(state: Pick<TaxState, "purchases">): string {
+  const max = state.purchases.reduce((m, x) => Math.max(m, Number(/^NF-(\d+)$/.exec(x.id)?.[1] ?? 0)), 0);
+  return `NF-${String(max + 1).padStart(3, "0")}`;
+}
+
+/** Apuração de CBS da obra: faturamento = orçamento dividido em engenharia/software, menos o crédito das compras. */
+export function assessWorkCbs(budget: number, state: TaxState = EMPTY_TAX): { assessment: CbsAssessment; blendedRate: number } {
+  const split = splitInvoice(budget, state.engineeringShare);
+  const assessment = assessCbs(
+    split.lines.map((l) => ({ description: l.description, kind: l.kind, amount: l.base })),
+    state.purchases,
+  );
+  return { assessment, blendedRate: split.blendedRate };
+}
+
 /** Substitui a lista de feriados (datas YYYY-MM-DD). */
 export function withHolidays(p: WorkPlanning, holidays: readonly string[]): WorkPlanning {
   if (holidays.length > MAX_HOLIDAYS) throw new PmoError(`No máximo ${MAX_HOLIDAYS} feriados.`);
@@ -504,6 +572,7 @@ export function describePlanningChange(prev: WorkPlanning, next: WorkPlanning): 
   if (!sameJson(prev.holidays, next.holidays)) out.push(`Feriados: ${prev.holidays.length} → ${next.holidays.length}`);
   if (next.baselines.length > prev.baselines.length) out.push(`Linha de base criada: ${next.baselines.at(-1)?.name ?? ""}`);
   else if (!sameJson(prev.baselines, next.baselines)) out.push("Linhas de base alteradas");
+  if (!sameJson(prev.tax, next.tax)) out.push("CBS da obra atualizada");
   if (!sameJson(prev.licensing, next.licensing)) out.push("Licenciamento GRAPROHAB atualizado");
   if (!sameJson(prev.resourceRates, next.resourceRates)) out.push("Diárias de recursos alteradas");
   const cost = keysChanged(prev.costs, next.costs);
