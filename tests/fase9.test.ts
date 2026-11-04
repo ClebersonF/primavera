@@ -40,7 +40,7 @@ describe("programa", () => {
     const c = withProgram(a, "");
     expect(c.program).toBeUndefined();
     expect("program" in c).toBe(false);
-    expect(() => withProgram(a, "x".repeat(61))).toThrow(PmoError);
+    expect(() => withProgram(a, "x".repeat(121))).toThrow(PmoError);
     expect(withProgram(EMPTY_PLANNING, undefined)).toBe(EMPTY_PLANNING);
   });
 });

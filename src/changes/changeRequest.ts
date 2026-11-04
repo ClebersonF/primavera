@@ -14,6 +14,8 @@ export interface ChangeRequest {
   costDeltas?: { activityId: string; delta: number }[];
   /** Ajustes de valor (BRL) em contratos, aplicados quando o pedido é aprovado. */
   contractDeltas?: { contractId: string; delta: number }[];
+  /** Aprovações já dadas, na ordem das etapas do fluxo de aprovação. */
+  approvals?: { role: string; by: string; at: string }[];
 }
 
 const TRANSITIONS: Record<ChangeStatus, ChangeStatus[]> = {

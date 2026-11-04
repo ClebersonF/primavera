@@ -42,3 +42,6 @@ export * from "./portfolio/programs";
 export * from "./cashflow/cashflow";
 export * from "./contracts/contracts";
 export * from "./network/layout";
+export * from "./portfolio/whatif";
+export * from "./portfolio/views";
+export * from "./resources/profile";

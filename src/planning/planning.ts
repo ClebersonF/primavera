@@ -1,3 +1,5 @@
+import { ALLOCATION_CURVES, type AllocationCurve } from "../resources/profile";
+import { normalizeProgramPath } from "../portfolio/programs";
 import { MAX_CONTRACTS, MAX_PAYMENTS, cleanContract, cleanContractDeltas, cleanPayment, summarizeContracts, validatePayment, type Contract, type ContractSummary, type Payment } from "../contracts/contracts";
 import type { Baseline } from "../baseline/baseline";
 import { transitionChange, type ChangeRequest, type ChangeStatus } from "../changes/changeRequest";
@@ -28,6 +30,8 @@ export interface ActivityPlan {
   deadline?: string;
   /** Código de atividade (grupo), texto livre até 40 caracteres. */
   group?: string;
+  /** Valores dos campos próprios de escopo "atividade": id do campo → valor. */
+  fields?: Record<string, FieldValue>;
   /** Restrição obrigatória: a atividade começa ou termina na data, prevalecendo sobre as predecessoras. */
   constraint?: { kind: "iniciar_em" | "terminar_em"; date: string };
   /** Passos da atividade, com peso; sem % informado, o avanço é a soma dos pesos concluídos. */
@@ -74,10 +78,35 @@ export function stepsPercent(steps: readonly ActivityStep[] | undefined): number
   return Math.round((done / total) * 1000) / 10;
 }
 
+export const FIELD_KINDS = ["texto", "numero", "data"] as const;
+export type FieldKind = (typeof FIELD_KINDS)[number];
+export const FIELD_SCOPES = ["atividade", "projeto"] as const;
+export type FieldScope = (typeof FIELD_SCOPES)[number];
+export const MAX_FIELDS = 20;
+export type FieldValue = string | number;
+/** Campo definido pelo usuário (como os campos definidos pelo usuário do Primavera). */
+export interface FieldDef {
+  id: string;
+  name: string;
+  kind: FieldKind;
+  scope: FieldScope;
+}
+
+export const APPROVER_ROLES = ["analyst", "manager", "director"] as const;
+export type ApproverRole = (typeof APPROVER_ROLES)[number];
+export const MAX_APPROVAL_STEPS = 5;
+/** Etapa do fluxo de aprovação de pedidos de mudança. */
+export interface ApprovalStep {
+  role: ApproverRole;
+  label: string;
+}
+
 export interface ResourceAssignmentPlan {
   resource: string;
-  /** Fração de uma pessoa por dia (0,05 a 20). */
+  /** Fração de uma pessoa por dia (0,05 a 20); com curva, é a média ao longo da atividade. */
   units: number;
+  /** Distribuição da carga ao longo da atividade; ausente = uniforme. */
+  curve?: AllocationCurve;
 }
 export const MAX_ASSIGNMENTS = 10;
 export const MAX_CODE_TYPES = 10;
@@ -111,7 +140,7 @@ export interface Risk {
 export const ISSUE_STATUSES = ["aberta", "em_andamento", "resolvida"] as const;
 export type IssueStatus = (typeof ISSUE_STATUSES)[number];
 export const MAX_ISSUES = 300;
-export const MAX_PROGRAM_LENGTH = 60;
+export const MAX_PROGRAM_LENGTH = 120;
 
 /** Questão (issue): problema que já ocorreu e precisa de ação, diferente do risco, que ainda pode ocorrer. */
 export interface Issue {
@@ -221,6 +250,14 @@ export interface WorkPlanning {
   payments: Payment[];
   /** Capacidade (pessoas por dia) por recurso; ausente = 1. */
   resourceCapacity: Record<string, number>;
+  /** Dias de folga de cada recurso (férias, licenças), YYYY-MM-DD: nesses dias a carga dele é zero. */
+  resourceOff: Record<string, string[]>;
+  /** Definições de campos próprios (texto, número ou data) para atividades e para o projeto. */
+  fieldDefs: FieldDef[];
+  /** Valores dos campos de escopo "projeto". */
+  projectFields: Record<string, FieldValue>;
+  /** Etapas de aprovação dos pedidos de mudança, em ordem; vazio = uma aprovação de gerente ou diretor. */
+  approvalFlow: ApprovalStep[];
   /** Tipos de código de atividade definidos para a obra. */
   codeTypes: ActivityCodeType[];
   /** Programa ou carteira a que o projeto pertence (nível acima do projeto); ausente = sem programa. */
@@ -286,6 +323,10 @@ export const EMPTY_PLANNING: WorkPlanning = Object.freeze({
   issues: [],
   licenses: [],
   resourceCapacity: {},
+  resourceOff: {},
+  fieldDefs: [],
+  projectFields: {},
+  approvalFlow: [],
   codeTypes: [],
   contracts: [],
   payments: [],
@@ -333,6 +374,15 @@ function cleanChange(v: unknown): ChangeRequest | null {
   if (dur === null || cost === null || contractDeltas === null) return null;
   const cr: ChangeRequest = { id: v.id, title: v.title, status: v.status as ChangeStatus };
   if (contractDeltas) cr.contractDeltas = contractDeltas;
+  if (v.approvals !== undefined) {
+    if (!Array.isArray(v.approvals) || v.approvals.length > MAX_APPROVAL_STEPS) return null;
+    const list: { role: string; by: string; at: string }[] = [];
+    for (const a of v.approvals) {
+      if (!isObj(a) || !(APPROVER_ROLES as readonly string[]).includes(a.role as string) || typeof a.by !== "string" || a.by.length > 100 || typeof a.at !== "string" || a.at.length > 40 || !Number.isFinite(Date.parse(a.at))) return null;
+      list.push({ role: a.role as string, by: a.by, at: a.at });
+    }
+    if (list.length > 0) cr.approvals = list;
+  }
   if (dur) cr.durationDeltas = dur;
   if (cost) cr.costDeltas = cost;
   return cr;
@@ -403,6 +453,21 @@ function cleanActivityPlan(v: unknown): ActivityPlan | null {
     if (g.length > MAX_GROUP_LENGTH) return null;
     if (g !== "") out.group = g;
   }
+  if (v.fields !== undefined) {
+    if (!isObj(v.fields) || Object.keys(v.fields).length > MAX_FIELDS) return null;
+    const fields: Record<string, FieldValue> = {};
+    for (const [k, x] of Object.entries(v.fields)) {
+      if (!safeKey(k) || k.length > 40) return null;
+      if (typeof x === "number") {
+        if (!Number.isFinite(x) || Math.abs(x) > 1e12) return null;
+        fields[k] = x;
+      } else if (typeof x === "string") {
+        if (x.length > 200) return null;
+        if (x.trim() !== "") fields[k] = x.trim();
+      } else return null;
+    }
+    if (Object.keys(fields).length > 0) out.fields = fields;
+  }
   if (v.constraint !== undefined) {
     if (!isObj(v.constraint) || (v.constraint.kind !== "iniciar_em" && v.constraint.kind !== "terminar_em") || !validDate(v.constraint.date)) return null;
     out.constraint = { kind: v.constraint.kind, date: v.constraint.date };
@@ -443,7 +508,10 @@ function cleanActivityPlan(v: unknown): ActivityPlan | null {
       const resource = a.resource.trim();
       if (resource === "" || resource.length > 100 || !safeKey(resource) || !isNum(a.units) || a.units < 0.05 || a.units > 20) return null;
       if (list.some((x) => x.resource === resource)) return null;
-      list.push({ resource, units: Math.round(a.units * 100) / 100 });
+      if (a.curve !== undefined && !(ALLOCATION_CURVES as readonly string[]).includes(a.curve as string)) return null;
+      const entry: ResourceAssignmentPlan = { resource, units: Math.round(a.units * 100) / 100 };
+      if (a.curve !== undefined && a.curve !== "linear") entry.curve = a.curve as AllocationCurve;
+      list.push(entry);
     }
     if (list.length > 0) out.assignments = list;
   }
@@ -459,6 +527,22 @@ function cleanActivityPlan(v: unknown): ActivityPlan | null {
     if (Object.keys(codes).length > 0) out.codes = codes;
   }
   return out;
+}
+
+function cleanFieldDef(v: unknown): FieldDef | null {
+  if (!isObj(v) || typeof v.id !== "string" || v.id === "" || v.id.length > 40 || !safeKey(v.id)) return null;
+  const name = optText(v.name, 60);
+  if (!name || !(FIELD_KINDS as readonly string[]).includes(v.kind as string) || !(FIELD_SCOPES as readonly string[]).includes(v.scope as string)) return null;
+  return { id: v.id, name, kind: v.kind as FieldKind, scope: v.scope as FieldScope };
+}
+
+/** Valida um valor contra o tipo do campo; devolve null se não servir. */
+function fieldValueFor(def: FieldDef, v: unknown): FieldValue | null {
+  if (def.kind === "numero") return typeof v === "number" && Number.isFinite(v) && Math.abs(v) <= 1e12 ? v : null;
+  if (typeof v !== "string") return null;
+  const t = v.trim();
+  if (def.kind === "data") return validDate(t) ? t : null;
+  return t.length > 0 && t.length <= 200 ? t : null;
 }
 
 function cleanCodeType(v: unknown): ActivityCodeType | null {
@@ -692,6 +776,54 @@ export function normalizePlanning(raw: unknown): WorkPlanning {
       }
     }
   }
+  const fieldDefs: FieldDef[] = [];
+  if (Array.isArray(raw.fieldDefs)) {
+    const seenF = new Set<string>();
+    for (const f of raw.fieldDefs.slice(0, MAX_FIELDS)) {
+      const c = cleanFieldDef(f);
+      if (c && !seenF.has(c.id)) {
+        seenF.add(c.id);
+        fieldDefs.push(c);
+      }
+    }
+  }
+  for (const [id, ap] of Object.entries(activityPlans)) {
+    if (!ap.fields) continue;
+    const kept: Record<string, FieldValue> = {};
+    for (const [k, val] of Object.entries(ap.fields)) {
+      const def = fieldDefs.find((d) => d.id === k && d.scope === "atividade");
+      const ok = def ? fieldValueFor(def, val) : null;
+      if (ok !== null) kept[k] = ok;
+    }
+    if (Object.keys(kept).length === 0) {
+      const { fields: _drop, ...rest } = ap;
+      if (Object.keys(rest).length === 0) delete activityPlans[id];
+      else activityPlans[id] = rest;
+    } else ap.fields = kept;
+  }
+  const projectFields: Record<string, FieldValue> = {};
+  if (isObj(raw.projectFields)) {
+    for (const [k, x] of Object.entries(raw.projectFields)) {
+      const def = fieldDefs.find((d) => d.id === k && d.scope === "projeto");
+      const ok = def ? fieldValueFor(def, x) : null;
+      if (ok !== null) projectFields[k] = ok;
+    }
+  }
+  const approvalFlow: ApprovalStep[] = [];
+  if (Array.isArray(raw.approvalFlow)) {
+    for (const st of raw.approvalFlow.slice(0, MAX_APPROVAL_STEPS)) {
+      const label = isObj(st) ? optText(st.label, 40) : null;
+      if (isObj(st) && label && (APPROVER_ROLES as readonly string[]).includes(st.role as string)) approvalFlow.push({ role: st.role as ApproverRole, label });
+    }
+  }
+  const resourceOff: Record<string, string[]> = {};
+  if (isObj(raw.resourceOff)) {
+    for (const [k, list] of Object.entries(raw.resourceOff)) {
+      if (!safeKey(k) || k.length > 100 || !Array.isArray(list)) continue;
+      const dates = [...new Set(list.filter((d): d is string => validDate(d)))].sort().slice(0, 400);
+      if (dates.length > 0) resourceOff[k] = dates;
+    }
+  }
   const resourceCapacity: Record<string, number> = {};
   if (isObj(raw.resourceCapacity)) {
     for (const [k, v] of Object.entries(raw.resourceCapacity)) if (safeKey(k) && k.length <= 100 && isNum(v) && v > 0 && v <= 100) resourceCapacity[k] = v;
@@ -742,7 +874,7 @@ export function normalizePlanning(raw: unknown): WorkPlanning {
   if (isObj(raw.resourceRates)) {
     for (const [k, v] of Object.entries(raw.resourceRates)) if (safeKey(k) && k.length <= 100 && isMoney(v)) resourceRates[k] = v;
   }
-  const result: WorkPlanning = { rev, baselines, costs, changes, activityPlans, holidays: cleanHolidays(raw.holidays), risks, history: history.slice(-MAX_HISTORY), resourceRates, scenarios: [], issues, licenses, resourceCapacity, codeTypes, contracts, payments };
+  const result: WorkPlanning = { rev, baselines, costs, changes, activityPlans, holidays: cleanHolidays(raw.holidays), risks, history: history.slice(-MAX_HISTORY), resourceRates, scenarios: [], issues, licenses, resourceCapacity, resourceOff, fieldDefs, projectFields, approvalFlow, codeTypes, contracts, payments };
   const scenarios: Scenario[] = [];
   if (Array.isArray(raw.scenarios)) {
     const seen = new Set<string>();
@@ -766,7 +898,7 @@ export function normalizePlanning(raw: unknown): WorkPlanning {
   if (licensing) result.licensing = licensing;
   const impact = raw.impact === undefined ? null : cleanImpact(raw.impact);
   if (impact) result.impact = impact;
-  const program = optText(raw.program, MAX_PROGRAM_LENGTH);
+  const program = typeof raw.program === "string" ? normalizeProgramPath(raw.program) : null;
   if (program) result.program = program;
   if (Number.isInteger(raw.primaryBaseline) && (raw.primaryBaseline as number) >= 0 && (raw.primaryBaseline as number) < baselines.length) {
     result.primaryBaseline = raw.primaryBaseline as number;
@@ -829,6 +961,11 @@ export function withActivityPlan(p: WorkPlanning, activityId: string, patch: Act
   const clean = cleanActivityPlan(merged);
   if (clean === null) throw new PmoError("Dados do cronograma da atividade inválidos (duração, percentual, datas — o término real não pode ser antes do início real —, predecessoras ou grupo).");
   if ((clean.predecessors ?? []).some((q) => q.id === activityId)) throw new PmoError("Uma atividade não pode ser predecessora de si mesma.");
+  for (const [k, val] of Object.entries(clean.fields ?? {})) {
+    const def = p.fieldDefs.find((d) => d.id === k);
+    if (!def || def.scope !== "atividade") throw new PmoError("Campo próprio inexistente ou de outro escopo.");
+    if (fieldValueFor(def, val) === null) throw new PmoError(`Valor inválido para o campo "${def.name}" (${def.kind}).`);
+  }
   for (const [k, val] of Object.entries(clean.codes ?? {})) {
     const t = p.codeTypes.find((x) => x.id === k);
     if (!t) throw new PmoError("Código de atividade de um tipo que não existe.");
@@ -888,6 +1025,116 @@ export function nextPaymentId(p: Pick<WorkPlanning, "payments">): string {
 export function contractsOf(p: Pick<WorkPlanning, "contracts" | "payments" | "changes">): ContractSummary[] {
   const approved = p.changes.filter((c) => c.status === "aprovada").flatMap((c) => c.contractDeltas ?? []);
   return summarizeContracts(p.contracts, p.payments, approved);
+}
+
+/** Cria ou atualiza um campo próprio; mudar tipo ou escopo apaga os valores já gravados dele. */
+export function withFieldDef(p: WorkPlanning, def: FieldDef): WorkPlanning {
+  const clean = cleanFieldDef(def);
+  if (clean === null) throw new PmoError(`Campo inválido: nome (até 60 caracteres), tipo (${FIELD_KINDS.join(", ")}) e escopo (${FIELD_SCOPES.join(", ")}).`);
+  const i = p.fieldDefs.findIndex((d) => d.id === clean.id);
+  if (i < 0 && p.fieldDefs.length >= MAX_FIELDS) throw new PmoError(`No máximo ${MAX_FIELDS} campos.`);
+  if (i >= 0 && JSON.stringify(p.fieldDefs[i]) === JSON.stringify(clean)) return p;
+  const old = i >= 0 ? p.fieldDefs[i]! : null;
+  const incompatible = old !== null && (old.kind !== clean.kind || old.scope !== clean.scope);
+  const next: WorkPlanning = { ...p, fieldDefs: i < 0 ? [...p.fieldDefs, clean] : p.fieldDefs.map((d, j) => (j === i ? clean : d)) };
+  return bump(incompatible ? dropFieldValues(next, clean.id) : next, {});
+}
+
+export function withoutFieldDef(p: WorkPlanning, id: string): WorkPlanning {
+  if (!p.fieldDefs.some((d) => d.id === id)) return p;
+  return bump(dropFieldValues({ ...p, fieldDefs: p.fieldDefs.filter((d) => d.id !== id) }, id), {});
+}
+
+function dropFieldValues(p: WorkPlanning, id: string): WorkPlanning {
+  const activityPlans: Record<string, ActivityPlan> = {};
+  for (const [aid, ap] of Object.entries(p.activityPlans)) {
+    if (!ap.fields || !(id in ap.fields)) {
+      activityPlans[aid] = ap;
+      continue;
+    }
+    const { [id]: _gone, ...fields } = ap.fields;
+    const { fields: _old, ...rest } = ap;
+    const next: ActivityPlan = Object.keys(fields).length ? { ...rest, fields } : rest;
+    if (Object.keys(next).length > 0) activityPlans[aid] = next;
+  }
+  const { [id]: _g, ...projectFields } = p.projectFields;
+  return { ...p, activityPlans, projectFields };
+}
+
+export function nextFieldId(p: Pick<WorkPlanning, "fieldDefs">): string {
+  const max = p.fieldDefs.reduce((m, d) => Math.max(m, Number(/^F-(\d+)$/.exec(d.id)?.[1] ?? 0)), 0);
+  return `F-${max + 1}`;
+}
+
+/** Define (ou limpa, com `undefined`) o valor de um campo de escopo "projeto". */
+export function withProjectField(p: WorkPlanning, id: string, value: FieldValue | undefined): WorkPlanning {
+  const def = p.fieldDefs.find((d) => d.id === id && d.scope === "projeto");
+  if (!def) throw new PmoError("Campo de projeto inexistente.");
+  const projectFields = { ...p.projectFields };
+  if (value === undefined || (typeof value === "string" && value.trim() === "")) delete projectFields[id];
+  else {
+    const ok = fieldValueFor(def, value);
+    if (ok === null) throw new PmoError(`Valor inválido para o campo "${def.name}" (${def.kind}).`);
+    projectFields[id] = ok;
+  }
+  if (JSON.stringify(projectFields) === JSON.stringify(p.projectFields)) return p;
+  return bump(p, { projectFields });
+}
+
+/** Soma de um campo numérico de atividade (ou null se nenhuma atividade tem valor). */
+export function sumField(p: Pick<WorkPlanning, "fieldDefs" | "activityPlans">, id: string): number | null {
+  const def = p.fieldDefs.find((d) => d.id === id);
+  if (!def || def.kind !== "numero" || def.scope !== "atividade") return null;
+  const vals = Object.values(p.activityPlans).flatMap((ap) => (typeof ap.fields?.[id] === "number" ? [ap.fields[id] as number] : []));
+  return vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) * 1e6) / 1e6 : null;
+}
+
+/** Dias de folga de um recurso (datas YYYY-MM-DD); lista vazia remove. */
+export function withResourceOff(p: WorkPlanning, resource: string, dates: readonly string[]): WorkPlanning {
+  const name = resource.trim();
+  if (!safeKey(name) || name.length > 100) throw new PmoError("Nome de recurso inválido.");
+  if (dates.some((d) => !validDate(d))) throw new PmoError("Datas de folga devem estar no formato AAAA-MM-DD.");
+  const list = [...new Set(dates)].sort();
+  if (list.length > 400) throw new PmoError("No máximo 400 dias de folga por recurso.");
+  if (JSON.stringify(p.resourceOff[name] ?? []) === JSON.stringify(list)) return p;
+  const resourceOff = { ...p.resourceOff };
+  if (list.length === 0) delete resourceOff[name];
+  else resourceOff[name] = list;
+  return bump(p, { resourceOff });
+}
+
+/** Define o fluxo de aprovação dos pedidos de mudança (vazio = uma aprovação de gerente ou diretor). */
+export function withApprovalFlow(p: WorkPlanning, steps: readonly ApprovalStep[]): WorkPlanning {
+  if (steps.length > MAX_APPROVAL_STEPS) throw new PmoError(`No máximo ${MAX_APPROVAL_STEPS} etapas de aprovação.`);
+  const clean: ApprovalStep[] = [];
+  for (const st of steps) {
+    const label = typeof st.label === "string" ? st.label.trim() : "";
+    if (!label || label.length > 40 || !(APPROVER_ROLES as readonly string[]).includes(st.role)) throw new PmoError("Etapa inválida: informe o nome (até 40 caracteres) e o papel (analista, gerente ou diretor).");
+    clean.push({ role: st.role, label });
+  }
+  if (JSON.stringify(clean) === JSON.stringify(p.approvalFlow)) return p;
+  if (p.changes.some((c) => c.status === "em_aprovacao" && (c.approvals?.length ?? 0) > 0)) throw new PmoError("Há pedido com aprovação em andamento; conclua ou devolva a rascunho antes de mudar o fluxo.");
+  return bump(p, { approvalFlow: clean });
+}
+
+/** Pode este papel aprovar a próxima etapa do pedido? (O diretor pode assinar qualquer etapa.) */
+export function canApproveNext(p: Pick<WorkPlanning, "approvalFlow">, cr: ChangeRequest, role: string): boolean {
+  if (cr.status !== "em_aprovacao") return false;
+  if (p.approvalFlow.length === 0) return role === "manager" || role === "director";
+  const step = p.approvalFlow[cr.approvals?.length ?? 0];
+  return step !== undefined && (role === step.role || role === "director");
+}
+
+/** Registra a aprovação da próxima etapa; na última, o pedido passa a "aprovada". */
+export function approveChangeStep(p: WorkPlanning, changeId: string, actor: { role: string; name: string }, at: string): WorkPlanning {
+  const cr = p.changes.find((c) => c.id === changeId);
+  if (!cr) throw new PmoError(`Pedido de mudança não encontrado: ${changeId}`);
+  if (!canApproveNext(p, cr, actor.role)) throw new PmoError(p.approvalFlow.length === 0 ? "Apenas gerente ou diretor aprova." : `A próxima etapa (${p.approvalFlow[cr.approvals?.length ?? 0]?.label ?? "—"}) exige outro papel.`);
+  if (p.approvalFlow.length === 0) return withChangeStatus(p, changeId, "aprovada");
+  const approvals = [...(cr.approvals ?? []), { role: actor.role, by: actor.name.trim().slice(0, 100) || "Desconhecido", at }];
+  const done = approvals.length >= p.approvalFlow.length;
+  const next = done ? transitionChange({ ...cr, approvals }, "aprovada") : { ...cr, approvals };
+  return bump(p, { changes: p.changes.map((c) => (c.id === changeId ? next : c)) });
 }
 
 /** Define (ou remove, com `undefined`) a capacidade de um recurso, em pessoas por dia. */
@@ -1146,8 +1393,8 @@ export function overdueIssues(issues: readonly Issue[], today: string): Issue[] 
 
 /** Define (ou limpa, com texto vazio) o programa do projeto. */
 export function withProgram(p: WorkPlanning, program: string | undefined): WorkPlanning {
-  const clean = program === undefined ? undefined : optText(program, MAX_PROGRAM_LENGTH);
-  if (clean === null) throw new PmoError(`Programa: no máximo ${MAX_PROGRAM_LENGTH} caracteres.`);
+  const clean = program === undefined ? undefined : normalizeProgramPath(program) || undefined;
+  if (program !== undefined && program.trim() !== "" && normalizeProgramPath(program) === null) throw new PmoError(`Programa: no máximo 5 níveis (separados por ">") e ${MAX_PROGRAM_LENGTH} caracteres.`);
   if (clean === p.program) return p;
   const { program: _old, ...rest } = p;
   return bump(clean ? { ...rest, program: clean } as WorkPlanning : rest as WorkPlanning, {});
@@ -1219,7 +1466,12 @@ export function withChange(p: WorkPlanning, cr: ChangeRequest): WorkPlanning {
 export function withChangeStatus(p: WorkPlanning, changeId: string, to: ChangeStatus): WorkPlanning {
   const cr = p.changes.find((c) => c.id === changeId);
   if (!cr) throw new PmoError(`Pedido de mudança não encontrado: ${changeId}`);
-  const next = transitionChange(cr, to);
+  if (to === "aprovada" && p.approvalFlow.length > 0) throw new PmoError("Este projeto usa aprovação por etapas: aprove pela etapa atual.");
+  let next = transitionChange(cr, to);
+  if ((to === "rascunho" || to === "em_aprovacao") && next.approvals) {
+    const { approvals: _gone, ...rest } = next;
+    next = rest;
+  }
   return bump(p, { changes: p.changes.map((c) => (c.id === changeId ? next : c)) });
 }
 
@@ -1257,6 +1509,10 @@ export function describePlanningChange(prev: WorkPlanning, next: WorkPlanning): 
   }
   for (const l of prev.licenses) if (!next.licenses.some((x) => x.id === l.id)) out.push(`Processo de licenciamento ${l.id} removido`);
   if (!sameJson(prev.resourceRates, next.resourceRates)) out.push("Diárias de recursos alteradas");
+  if (!sameJson(prev.resourceOff, next.resourceOff)) out.push("Dias de folga de recursos alterados");
+  if (!sameJson(prev.fieldDefs, next.fieldDefs)) out.push("Campos próprios alterados");
+  if (!sameJson(prev.projectFields, next.projectFields)) out.push("Campos do projeto alterados");
+  if (!sameJson(prev.approvalFlow, next.approvalFlow)) out.push("Fluxo de aprovação alterado");
   for (const k of next.contracts) {
     const old = prev.contracts.find((x) => x.id === k.id);
     if (!old) out.push(`Contrato ${k.id} criado: ${k.name}`);
