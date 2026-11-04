@@ -70,7 +70,7 @@ Atualizado em 04/11/2026. Legenda: **OK** atendido e validado · **Parcial** ate
 
 | # | Requisito | Status | Onde / limite |
 |---|---|---|---|
-| E1 | Identidade da CALM (nome, logo, paleta, vocabulário "Projetos/Áreas", textos de entrada, título e rodapé de PDF) | OK | Marca `calm` é a padrão (`src/stores/branding.ts`); quem já tinha a marca KONSTRUI ativa migra para a CALM, as demais marcas continuam e podem ser reativadas em Marca branca. Logo é texto (CA/LM); **não há logomarca oficial** — envie o arquivo em Marca branca para trocar |
+| E1 | Identidade da CALM (nome, logo, **paleta aplicada em todo o app, inclusive menu lateral, fundo, bordas e modo escuro**, vocabulário "Projetos/Áreas", textos de entrada, título e rodapé de PDF) | OK | Marca `calm` é a padrão (`src/stores/branding.ts`); o tema agora é aplicado por folha de estilo na raiz (`BrandProvider`), valendo também na entrada e no login. Quem já tinha a marca KONSTRUI ativa migra para a CALM; conta real cuja organização ainda tem a marca KONSTRUI de origem usa a CALM. Contraste conferido (mín. 6:1 no texto corrente). Logo é texto (CA/LM); **não há logomarca oficial** — envie o arquivo em Marca branca |
 | E2 | Registrar impacto por projeto (biodiversidade, clima, água/solo, social; hectares, pessoas, tCO2e) | OK | Aba **Impacto** do planejamento; gravado com a obra; entra no histórico |
 | E3 | Priorizar o portfólio pela estratégia | OK | Seletor de estratégia e pesos na tela `/pmo`; padrão Operacional ignora impacto; preset CALM pesa impacto 45% |
 | E4 | Totais de impacto do portfólio e aviso de projetos não avaliados | OK | Cartões em `/pmo`; fator ausente vale neutro e é marcado com "*" |
