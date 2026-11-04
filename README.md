@@ -1,34 +1,45 @@
 # gestor-galpoes-pmo
 
-Controle de projetos para o Gestor de Galpões Inteligente, espelhando as funções do Oracle Primavera (P6 e Unifier). Funções reproduzidas, sem copiar visual ou marca da Oracle.
+Controle de projetos para o Gestor de Galpões Inteligente, espelhando as funções do Oracle Primavera (P6 e Unifier). Funções reproduzidas, sem copiar visual ou marca da Oracle. TypeScript puro, sem dependências de runtime.
 
-## Onda 1 — motor CPM (`src/cpm`)
+## Módulos
 
-TypeScript puro, sem dependências de runtime, pronto para copiar para `src/features/schedule/` do projeto Lovable.
+| Pasta | O que faz |
+|---|---|
+| `src/cpm` | Motor CPM: vínculos FS/SS/FF/SF com lag, folga total e livre, caminho crítico, calendário de dias úteis e feriados |
+| `src/wbs` | EAP/WBS: árvore com códigos (1.2.3), validação, CPM nas folhas e rollup de prazo, custo e progresso nos resumos |
+| `src/baseline` | Linha de base imutável e comparação (atraso, custo, atividades novas e removidas) |
+| `src/cost` | Cost sheet em árvore (orçado, comprometido, realizado, previsão) e curva S planejada em centavos |
+| `src/changes` | Pedidos de mudança: fluxo de aprovação, impacto em prazo, custo e caminho crítico, aplicação só de mudanças aprovadas |
+| `src/tax` | CBS (Lucro Presumido, não cumulativo): duas alíquotas, créditos de entrada, saldo devedor ou credor, divisão da NF em duas linhas |
+| `src/licensing` | GRAPROHAB/CETESB: etapas do processo, checklist de documentos, quadro de áreas, faixas de APP, prazo do Comunique-se |
 
-- Vínculos FS, SS, FF e SF, com lag e lead (lag negativo).
-- Restrição "não iniciar antes de" e marcos (duração 0).
-- Início e término mais cedo e mais tarde, folga total, folga livre e caminho crítico.
-- Detecção de dependência circular (`CpmCycleError`) e validação de entrada (`CpmError`).
-- Calendário de dias úteis com feriados: `toCalendarDates`, `workDayAt`.
+Convenções: tempo em dias úteis inteiros (atividade ocupa `[início, fim)`); dinheiro em BRL, somado em centavos inteiros; erros de domínio são `PmoError` (e `CpmError` no CPM).
+
+## Pontos de atenção
+
+- **CBS:** 11,3% de alíquota padrão e 30% de redução para engenharia vêm do estudo, que as chama de "estimadas". São parâmetros (`CbsConfig`); valide com o contador antes de usar em faturamento.
+- **GRAPROHAB:** o manual de origem foi gerado por IA e não define prazo de cada etapa. As durações em `GRAPROHAB_STEPS` são estimativas editáveis; só os 180 dias corridos do Comunique-se vêm do manual.
+- **Faixa de APP:** em larguras exatas (10, 50, 200, 600 m) adota-se a faixa maior, mais protetora.
+
+## Uso
 
 ```ts
-import { scheduleCpm, toCalendarDates } from "./cpm";
+import { planWbs, createBaseline, compareToBaseline, plannedSCurve, spreadFromPlan } from "./src";
 
-const r = scheduleCpm([
-  { id: "A", duration: 5 },
-  { id: "B", duration: 2, predecessors: [{ id: "A" }] },
+const plan = planWbs([
+  { id: "1", parentId: null, name: "Obra" },
+  { id: "A", parentId: "1", name: "Fundação", duration: 5, plannedCost: 1000 },
+  { id: "B", parentId: "1", name: "Estrutura", duration: 10, plannedCost: 2500, predecessors: [{ id: "A" }] },
 ]);
-r.criticalPath; // ["A", "B"]
-toCalendarDates(r, "2026-11-02");
+plan.cpm.criticalPath; // ["A", "B"]
+const base = createBaseline("Base 1", "2026-11-04", plan);
+plannedSCurve(spreadFromPlan(plan), 5); // curva S semanal
 ```
 
-Convenção: dias úteis inteiros; atividade ocupa `[início, fim)`.
+## Próxima onda
 
-## Próximas ondas
-
-2. EAP/WBS, baseline, cost sheet, curva S e mudanças (inclui CBS e licenciamento GRAPROHAB).
-3. EVM, recursos e portfólio.
+Valor agregado (EVM: PV/EV/AC, CPI/SPI), histograma de recursos e priorização de portfólio.
 
 ## Desenvolvimento
 

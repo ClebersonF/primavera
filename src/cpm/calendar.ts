@@ -29,6 +29,7 @@ function assertCalendar(cal: WorkCalendar): void {
   for (const d of cal.workWeekdays) {
     if (!Number.isInteger(d) || d < 0 || d > 6) throw new CpmError(`Dia da semana inválido: ${d}`);
   }
+  for (const h of cal.holidays) parseIso(h); // feriado mal formatado seria ignorado em silêncio
 }
 
 export function isWorkDay(date: string, cal: WorkCalendar = DEFAULT_CALENDAR): boolean {

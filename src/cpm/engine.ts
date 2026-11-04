@@ -7,6 +7,8 @@ import {
   type ScheduledActivity,
 } from "./types";
 
+const LINK_TYPES: ReadonlySet<string> = new Set<LinkType>(["FS", "SS", "FF", "SF"]);
+
 interface Link {
   from: string; // predecessora
   to: string; // sucessora
@@ -113,7 +115,11 @@ export function scheduleCpm(input: readonly CpmActivity[]): CpmResult {
       }
       const lag = pred.lag ?? 0;
       assertInt(lag, `Lag do vínculo ${pred.id} → ${a.id}`);
-      const link: Link = { from: pred.id, to: a.id, type: pred.type ?? "FS", lag };
+      const type = pred.type ?? "FS";
+      if (!LINK_TYPES.has(type)) {
+        throw new CpmError(`Tipo de vínculo inválido em ${pred.id} → ${a.id}: ${String(type)} (use FS, SS, FF ou SF)`);
+      }
+      const link: Link = { from: pred.id, to: a.id, type, lag };
       links.push(link);
       incoming.get(a.id)!.push(link);
       outgoing.get(pred.id)!.push(link);
