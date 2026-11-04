@@ -60,7 +60,7 @@ Atualizado em 04/11/2026. Legenda: **OK** atendido e validado · **Parcial** ate
 | P14 | Pedidos de mudança com impacto e aprovação | Parcial | Aba **Mudanças**: fluxo e impacto; aprovação por papel (gerente/diretor); **não** usa a tela de Aprovações da app |
 | P15 | Gestão de riscos | **Aberto** | Não implementado |
 | P16 | Códigos de atividade, filtros e layouts, relatórios | **Aberto** | Não implementado |
-| P17 | Persistência compartilhada, multiusuário, histórico e auditoria | **Aberto** | Baseline, custos e mudanças ficam no **localStorage do navegador** (`facilities.pmo.v1`); exigem tabelas no backend (Odoo) |
+| P17 | Persistência compartilhada, multiusuário, histórico e auditoria | Parcial | Baseline, custos e mudanças são gravados **com a obra no Odoo** (`x_obras`, campo de notas, mesmo mecanismo das demais informações da obra); outra pessoa enxerga na hora. Conflito simultâneo é **detectado** (quem grava primeiro é avisado), não evitado. **Sem histórico/auditoria** de quem mudou o quê; modelo dedicado no Odoo segue como evolução |
 | P18 | Perfis de acesso | OK | Menu e rotas PMO só para analista, gerente e diretor (`src/lib/rbac.ts`) |
 
 ## 5. Processo (prompt da squad)
@@ -76,6 +76,7 @@ Atualizado em 04/11/2026. Legenda: **OK** atendido e validado · **Parcial** ate
 
 - Biblioteca (`ClebersonF/primavera`): `npm test` (vitest) e `npx tsc --noEmit`.
 - App (cópia): `npx tsc --noEmit` deve manter os 54 erros preexistentes e nenhum em `pmo`, `planning`, `features/schedule`.
+- Persistência: com o Odoo indisponível a gravação é recusada com aviso; em obra do Odoo, a leitura parte sempre do registro atual.
 - Telas: abrir **Gestão de Projetos (PMO)** no menu; `/obras/<id>/cronograma` e `/obras/<id>/planejamento`. Fluxo validado em navegador com as obras de exemplo (baseline → custo realizado → mudança aprovada → cronograma e portfólio atualizados).
 
 ## 7. Riscos e decisões pendentes
@@ -83,5 +84,5 @@ Atualizado em 04/11/2026. Legenda: **OK** atendido e validado · **Parcial** ate
 1. Alíquotas de CBS e redução de 30% são estimativas; confirmar com a contabilidade antes de faturar.
 2. Prazos do GRAPROHAB são estimativas nossas sobre um manual gerado por IA.
 3. Pesos da priorização (natureza 30%, desvio de prazo 30%, proximidade do prazo 25%, orçamento 15%) e o limite de 30% do alerta de caixa são convenções nossas.
-4. Dados de planejamento locais: limpar o navegador apaga baseline, custos e mudanças. Decidir se entram no Odoo (modelo `x_*`) ou em tabela própria.
+4. Planejamento gravado no campo de notas de `x_obras` (JSON): sem trilha de auditoria e sem consulta/relatório no Odoo. Obras que existem só no cache do navegador (exemplos) **não gravam** no Odoo. Migrar para modelo dedicado (`x_obras_planejamento`) exige criar o modelo no Odoo e liberar na função de borda.
 5. Mudanças aprovadas valem no cronograma e no EVM; se a atividade for removida ou renomeada, o pedido é ignorado e a tela avisa nas premissas.
