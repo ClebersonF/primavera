@@ -1,3 +1,4 @@
+import { MAX_CONTRACTS, MAX_PAYMENTS, cleanContract, cleanContractDeltas, cleanPayment, summarizeContracts, validatePayment, type Contract, type ContractSummary, type Payment } from "../contracts/contracts";
 import type { Baseline } from "../baseline/baseline";
 import { transitionChange, type ChangeRequest, type ChangeStatus } from "../changes/changeRequest";
 import { DEFAULT_CALENDAR, type WorkCalendar } from "../cpm/calendar";
@@ -178,6 +179,10 @@ export interface WorkPlanning {
   scenarios: Scenario[];
   /** Questões (issues) da obra. */
   issues: Issue[];
+  /** Contratos e compromissos ligados às atividades. */
+  contracts: Contract[];
+  /** Pagamentos (realizados e previstos) dos contratos, com data. */
+  payments: Payment[];
   /** Capacidade (pessoas por dia) por recurso; ausente = 1. */
   resourceCapacity: Record<string, number>;
   /** Tipos de código de atividade definidos para a obra. */
@@ -246,6 +251,8 @@ export const EMPTY_PLANNING: WorkPlanning = Object.freeze({
   licenses: [],
   resourceCapacity: {},
   codeTypes: [],
+  contracts: [],
+  payments: [],
 }) as WorkPlanning;
 export const MAX_HOLIDAYS = 400;
 export const MAX_PREDECESSORS = 50;
@@ -286,8 +293,10 @@ function cleanChange(v: unknown): ChangeRequest | null {
   if (!isObj(v) || typeof v.id !== "string" || typeof v.title !== "string" || typeof v.status !== "string" || !STATUSES.has(v.status)) return null;
   const dur = cleanDeltas(v.durationDeltas);
   const cost = cleanDeltas(v.costDeltas);
-  if (dur === null || cost === null) return null;
+  const contractDeltas = cleanContractDeltas(v.contractDeltas);
+  if (dur === null || cost === null || contractDeltas === null) return null;
   const cr: ChangeRequest = { id: v.id, title: v.title, status: v.status as ChangeStatus };
+  if (contractDeltas) cr.contractDeltas = contractDeltas;
   if (dur) cr.durationDeltas = dur;
   if (cost) cr.costDeltas = cost;
   return cr;
@@ -593,6 +602,28 @@ export function normalizePlanning(raw: unknown): WorkPlanning {
       else activityPlans[id] = rest;
     } else ap.codes = kept;
   }
+  const contracts: Contract[] = [];
+  if (Array.isArray(raw.contracts)) {
+    const seenK = new Set<string>();
+    for (const k of raw.contracts.slice(0, MAX_CONTRACTS)) {
+      const c = cleanContract(k);
+      if (c && !seenK.has(c.id)) {
+        seenK.add(c.id);
+        contracts.push(c);
+      }
+    }
+  }
+  const payments: Payment[] = [];
+  if (Array.isArray(raw.payments)) {
+    const seenP = new Set<string>();
+    for (const x of raw.payments.slice(0, MAX_PAYMENTS)) {
+      const c = cleanPayment(x);
+      if (c && !seenP.has(c.id) && contracts.some((k) => k.id === c.contractId)) {
+        seenP.add(c.id);
+        payments.push(c);
+      }
+    }
+  }
   const resourceCapacity: Record<string, number> = {};
   if (isObj(raw.resourceCapacity)) {
     for (const [k, v] of Object.entries(raw.resourceCapacity)) if (safeKey(k) && k.length <= 100 && isNum(v) && v > 0 && v <= 100) resourceCapacity[k] = v;
@@ -643,7 +674,7 @@ export function normalizePlanning(raw: unknown): WorkPlanning {
   if (isObj(raw.resourceRates)) {
     for (const [k, v] of Object.entries(raw.resourceRates)) if (safeKey(k) && k.length <= 100 && isMoney(v)) resourceRates[k] = v;
   }
-  const result: WorkPlanning = { rev, baselines, costs, changes, activityPlans, holidays: cleanHolidays(raw.holidays), risks, history: history.slice(-MAX_HISTORY), resourceRates, scenarios: [], issues, licenses, resourceCapacity, codeTypes };
+  const result: WorkPlanning = { rev, baselines, costs, changes, activityPlans, holidays: cleanHolidays(raw.holidays), risks, history: history.slice(-MAX_HISTORY), resourceRates, scenarios: [], issues, licenses, resourceCapacity, codeTypes, contracts, payments };
   const scenarios: Scenario[] = [];
   if (Array.isArray(raw.scenarios)) {
     const seen = new Set<string>();
@@ -740,6 +771,55 @@ export function withActivityPlan(p: WorkPlanning, activityId: string, patch: Act
   if (Object.keys(clean).length === 0) delete activityPlans[activityId];
   else activityPlans[activityId] = clean;
   return bump(p, { activityPlans });
+}
+
+/** Cria ou atualiza (pelo id) um contrato. */
+export function withContract(p: WorkPlanning, contract: Contract): WorkPlanning {
+  const clean = cleanContract(contract);
+  if (clean === null) throw new PmoError("Contrato inválido: nome, valor maior ou igual a zero, situação e datas no formato AAAA-MM-DD.");
+  const i = p.contracts.findIndex((k) => k.id === clean.id);
+  if (i < 0 && p.contracts.length >= MAX_CONTRACTS) throw new PmoError(`No máximo ${MAX_CONTRACTS} contratos.`);
+  if (i >= 0 && JSON.stringify(p.contracts[i]) === JSON.stringify(clean)) return p;
+  return bump(p, { contracts: i < 0 ? [...p.contracts, clean] : p.contracts.map((k, j) => (j === i ? clean : k)) });
+}
+
+/** Remove o contrato e os pagamentos dele; recusa se alguma ordem de mudança o referencia. */
+export function withoutContract(p: WorkPlanning, id: string): WorkPlanning {
+  if (!p.contracts.some((k) => k.id === id)) return p;
+  if (p.changes.some((c) => c.contractDeltas?.some((d) => d.contractId === id))) throw new PmoError("Há pedido de mudança ligado a este contrato; remova o ajuste antes.");
+  return bump(p, { contracts: p.contracts.filter((k) => k.id !== id), payments: p.payments.filter((x) => x.contractId !== id) });
+}
+
+export function nextContractId(p: Pick<WorkPlanning, "contracts">): string {
+  const max = p.contracts.reduce((m, k) => Math.max(m, Number(/^K-(\d+)$/.exec(k.id)?.[1] ?? 0)), 0);
+  return `K-${max + 1}`;
+}
+
+/** Cria ou atualiza (pelo id) um pagamento. */
+export function withPayment(p: WorkPlanning, payment: Payment): WorkPlanning {
+  const clean = cleanPayment(payment);
+  if (clean === null) throw new PmoError("Pagamento inválido: valor maior que zero, data AAAA-MM-DD e situação.");
+  validatePayment(p.contracts, clean);
+  const i = p.payments.findIndex((x) => x.id === clean.id);
+  if (i < 0 && p.payments.length >= MAX_PAYMENTS) throw new PmoError(`No máximo ${MAX_PAYMENTS} pagamentos.`);
+  if (i >= 0 && JSON.stringify(p.payments[i]) === JSON.stringify(clean)) return p;
+  return bump(p, { payments: i < 0 ? [...p.payments, clean] : p.payments.map((x, j) => (j === i ? clean : x)) });
+}
+
+export function withoutPayment(p: WorkPlanning, id: string): WorkPlanning {
+  if (!p.payments.some((x) => x.id === id)) return p;
+  return bump(p, { payments: p.payments.filter((x) => x.id !== id) });
+}
+
+export function nextPaymentId(p: Pick<WorkPlanning, "payments">): string {
+  const max = p.payments.reduce((m, x) => Math.max(m, Number(/^P-(\d+)$/.exec(x.id)?.[1] ?? 0)), 0);
+  return `P-${max + 1}`;
+}
+
+/** Situação dos contratos, já com os ajustes das ordens de mudança aprovadas. */
+export function contractsOf(p: Pick<WorkPlanning, "contracts" | "payments" | "changes">): ContractSummary[] {
+  const approved = p.changes.filter((c) => c.status === "aprovada").flatMap((c) => c.contractDeltas ?? []);
+  return summarizeContracts(p.contracts, p.payments, approved);
 }
 
 /** Define (ou remove, com `undefined`) a capacidade de um recurso, em pessoas por dia. */
@@ -1062,6 +1142,18 @@ export function describePlanningChange(prev: WorkPlanning, next: WorkPlanning): 
   }
   for (const l of prev.licenses) if (!next.licenses.some((x) => x.id === l.id)) out.push(`Processo de licenciamento ${l.id} removido`);
   if (!sameJson(prev.resourceRates, next.resourceRates)) out.push("Diárias de recursos alteradas");
+  for (const k of next.contracts) {
+    const old = prev.contracts.find((x) => x.id === k.id);
+    if (!old) out.push(`Contrato ${k.id} criado: ${k.name}`);
+    else if (!sameJson(old, k)) out.push(`Contrato ${k.id} atualizado: ${k.name}`);
+  }
+  for (const k of prev.contracts) if (!next.contracts.some((x) => x.id === k.id)) out.push(`Contrato ${k.id} removido`);
+  for (const x of next.payments) {
+    const old = prev.payments.find((y) => y.id === x.id);
+    if (!old) out.push(`Pagamento ${x.id} registrado (${x.contractId}, ${x.status})`);
+    else if (!sameJson(old, x)) out.push(`Pagamento ${x.id} atualizado${old.status !== x.status ? ` (${old.status} → ${x.status})` : ""}`);
+  }
+  for (const x of prev.payments) if (!next.payments.some((y) => y.id === x.id) && next.contracts.some((k) => k.id === x.contractId)) out.push(`Pagamento ${x.id} removido`);
   if (!sameJson(prev.resourceCapacity, next.resourceCapacity)) out.push("Capacidade de recursos alterada");
   for (const t of next.codeTypes) {
     const old = prev.codeTypes.find((x) => x.id === t.id);

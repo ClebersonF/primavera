@@ -93,12 +93,12 @@ Cobertura real hoje: motor de cronograma e valor agregado completo; planejamento
 | Visualizador de lógica (diagrama de rede) | P6 (doc. lida) | **Não há** | Só Gantt |
 | Cópia de projeto e what-if entre projetos | não confirmado na doc. lida | Parcial | Cenários por obra; sem cenário de portfólio |
 | Mudança global, passos de atividade, restrições obrigatórias | não confirmado na doc. lida | **Não há** (restrição "terminar até" existe) | Conhecimento geral do produto; confirmar na doc. completa |
-| Planilha de custos ligada a contratos, compromissos e pagamentos | Unifier (doc. lida) | Parcial | Aba Custos por atividade (orçado, comprometido, realizado, previsão); sem contratos nem pagamentos ligados |
+| Planilha de custos ligada a contratos, compromissos e pagamentos | Unifier (doc. lida) | OK | Aba Contratos: contratos ligados a atividades, valor vigente, pagamentos datados (pago/previsto), saldo e alerta de estouro; a aba Custos segue por atividade |
 | Processos de negócio e fluxos configuráveis | Unifier (doc. lida) | Parcial | Fluxo fixo de pedidos de mudança com aprovação por papel; sem construtor de fluxo e fora da tela de Aprovações da app |
-| Fluxo de caixa por cronograma, projeto e portfólio | Unifier (doc. lida) | Parcial | Curva S por obra e fluxo mensal consolidado do portfólio e por programa (previsto × realizado, CSV); o realizado é distribuído por premissa, sem lançamentos de caixa reais |
+| Fluxo de caixa por cronograma, projeto e portfólio | Unifier (doc. lida) | Parcial | Curva S por obra e fluxo mensal consolidado do portfólio e por programa (previsto × realizado, CSV); o realizado vem dos pagamentos lançados nos contratos (na data de cada um) e, onde não há pagamentos, é estimado por atividade |
 | Previsão contra a linha de base, painéis e relatórios | Unifier (doc. lida) | Parcial | EVM, EAC/ETC e painel de portfólio; sem biblioteca de relatórios |
 | Assinatura digital e revisão de documentos | Unifier (doc. lida) | Fora de escopo | Existe fluxo próprio de assinatura em OS |
-| Ordens de mudança que atualizam contrato e planilha de custos | Unifier (doc. lida) | Parcial | Mudança aprovada altera prazo/EVM; não altera contrato |
+| Ordens de mudança que atualizam contrato e planilha de custos | Unifier (doc. lida) | OK | Pedido aprovado altera prazo, EVM, custo previsto e o valor vigente do contrato ligado |
 | Ativos: manutenção, garantias, inspeções, locação | Unifier (doc. lida) | **Já existe** (módulos de Facilities/Patrimônio) | Não faz parte do PMO |
 
 Funções que o Primavera não tem e a app passou a ter: licenciamento GRAPROHAB/CETESB, CBS por obra e impacto socioambiental com priorização por estratégia.

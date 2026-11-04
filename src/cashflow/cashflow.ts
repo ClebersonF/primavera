@@ -21,6 +21,11 @@ export interface CashFlowProject {
   startDate: string;
   calendar?: WorkCalendar;
   items: readonly CashFlowItem[];
+  /**
+   * Pagamentos datados. Com pelo menos um, o realizado do projeto vem dos pagamentos "pago" (na data de cada um)
+   * e os "previsto" formam a projeção de desembolso; o custo realizado estimado por atividade deixa de ser usado.
+   */
+  payments?: readonly { date: string; amount: number; status: "previsto" | "pago" }[];
 }
 
 export interface CashFlowMonth {
@@ -28,6 +33,10 @@ export interface CashFlowMonth {
   month: string;
   planned: number;
   actual: number;
+  /** Parte do realizado que vem de pagamentos lançados (o resto é estimativa por atividade). */
+  actualFromPayments: number;
+  /** Pagamentos ainda previstos neste mês. */
+  forecast: number;
   plannedCumulative: number;
   actualCumulative: number;
   /** Mês posterior ao da data de referência: o realizado ainda não existe. */
@@ -47,10 +56,10 @@ const nextMonth = (m: string) => {
   return mo === 12 ? `${y + 1}-01` : `${y}-${String(mo + 1).padStart(2, "0")}`;
 };
 
-type Cents = Map<string, { planned: number; actual: number }>;
+type Cents = Map<string, { planned: number; actual: number; paid: number; forecast: number }>;
 
-function add(map: Cents, month: string, key: "planned" | "actual", cents: number) {
-  const cur = map.get(month) ?? { planned: 0, actual: 0 };
+function add(map: Cents, month: string, key: "planned" | "actual" | "paid" | "forecast", cents: number) {
+  const cur = map.get(month) ?? { planned: 0, actual: 0, paid: 0, forecast: 0 };
   cur[key] += cents;
   map.set(month, cur);
 }
@@ -77,13 +86,24 @@ function project(p: CashFlowProject, asOf: string, map: Cents) {
     const planned = nonNegativeCents(it.cost, `Custo previsto da atividade ${it.id}`);
     const window = it.finish > it.start ? days.slice(it.start, it.finish) : [days[it.start]!];
     spread(map, window, planned, "planned");
-    if (it.actual !== undefined) {
+    if (it.actual !== undefined && !(p.payments && p.payments.length > 0)) {
       const actual = nonNegativeCents(it.actual, `Custo realizado da atividade ${it.id}`);
       // Premissa: o realizado se distribui uniformemente pelos dias úteis previstos até a data de referência;
       // se a atividade ainda não começou no calendário, vai para o dia de referência.
       const upTo = window.filter((d) => d <= asOf);
       spread(map, upTo.length > 0 ? upTo : [asOf], actual, "actual");
     }
+  }
+}
+
+function addPayments(p: CashFlowProject, map: Cents) {
+  for (const x of p.payments ?? []) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(x.date)) throw new PmoError(`Fluxo de caixa: data de pagamento inválida (${x.date}).`);
+    const cents = nonNegativeCents(x.amount, "Valor do pagamento");
+    if (x.status === "pago") {
+      add(map, monthOf(x.date), "actual", cents);
+      add(map, monthOf(x.date), "paid", cents);
+    } else add(map, monthOf(x.date), "forecast", cents);
   }
 }
 
@@ -94,10 +114,10 @@ function finish(map: Cents, asOf: string): CashFlow {
   let pc = 0;
   let ac = 0;
   for (let m = keys[0]!; m <= keys[keys.length - 1]!; m = nextMonth(m)) {
-    const v = map.get(m) ?? { planned: 0, actual: 0 };
+    const v = map.get(m) ?? { planned: 0, actual: 0, paid: 0, forecast: 0 };
     pc += v.planned;
     ac += v.actual;
-    months.push({ month: m, planned: fromCents(v.planned), actual: fromCents(v.actual), plannedCumulative: fromCents(pc), actualCumulative: fromCents(ac), future: m > monthOf(asOf) });
+    months.push({ month: m, planned: fromCents(v.planned), actual: fromCents(v.actual), actualFromPayments: fromCents(v.paid), forecast: fromCents(v.forecast), plannedCumulative: fromCents(pc), actualCumulative: fromCents(ac), future: m > monthOf(asOf) });
   }
   return { months, totalPlanned: fromCents(pc), totalActual: fromCents(ac) };
 }
@@ -106,7 +126,10 @@ function finish(map: Cents, asOf: string): CashFlow {
 export function consolidateCashFlow(projects: readonly CashFlowProject[], asOf: string): CashFlow {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(asOf)) throw new PmoError(`Data de referência inválida: ${asOf}`);
   const map: Cents = new Map();
-  for (const p of projects) project(p, asOf, map);
+  for (const p of projects) {
+    project(p, asOf, map);
+    addPayments(p, map);
+  }
   return finish(map, asOf);
 }
 

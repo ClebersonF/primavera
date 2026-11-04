@@ -38,10 +38,12 @@ export interface ThresholdMetrics {
   overdueIssues: number;
   /** Atividades com "terminar até" violado. */
   deadlineViolations?: number;
+  /** Contratos com pagamentos (realizados + previstos) acima do valor vigente. */
+  overCommittedContracts?: number;
 }
 
 export type AlertSeverity = "atencao" | "critico";
-export type AlertCode = "spi" | "cpi" | "prazo" | "riscos" | "questoes" | "restricoes";
+export type AlertCode = "spi" | "cpi" | "prazo" | "riscos" | "questoes" | "restricoes" | "contratos";
 
 export interface ThresholdAlert {
   code: AlertCode;
@@ -71,6 +73,7 @@ export function evaluateThresholds(m: ThresholdMetrics, rules: ThresholdRules = 
   if (m.severeRisks >= rules.severeRisksWarn && m.severeRisks > 0) out.push({ code: "riscos", severity: m.severeRisks >= rules.severeRisksCritical ? "critico" : "atencao", message: `${m.severeRisks} risco(s) alto/crítico ativo(s)` });
   if (m.overdueIssues >= rules.overdueIssuesWarn && m.overdueIssues > 0) out.push({ code: "questoes", severity: m.overdueIssues >= rules.overdueIssuesCritical ? "critico" : "atencao", message: `${m.overdueIssues} questão(ões) com prazo vencido` });
   if ((m.deadlineViolations ?? 0) > 0) out.push({ code: "restricoes", severity: "critico", message: `${m.deadlineViolations} atividade(s) com “terminar até” violado` });
+  if ((m.overCommittedContracts ?? 0) > 0) out.push({ code: "contratos", severity: "critico", message: `${m.overCommittedContracts} contrato(s) com pagamentos acima do valor vigente` });
   return out.sort((a, b) => Number(b.severity === "critico") - Number(a.severity === "critico"));
 }
 

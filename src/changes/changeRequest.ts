@@ -12,6 +12,8 @@ export interface ChangeRequest {
   durationDeltas?: { activityId: string; delta: number }[];
   /** Ajustes de custo (BRL, pode ser negativo) por atividade-folha. */
   costDeltas?: { activityId: string; delta: number }[];
+  /** Ajustes de valor (BRL) em contratos, aplicados quando o pedido é aprovado. */
+  contractDeltas?: { contractId: string; delta: number }[];
 }
 
 const TRANSITIONS: Record<ChangeStatus, ChangeStatus[]> = {
