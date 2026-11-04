@@ -51,7 +51,7 @@ Atualizado em 04/11/2026. Legenda: **OK** atendido e validado · **Parcial** ate
 | P5 | Gantt e caminho crítico | OK | `/obras/$id/cronograma` |
 | P6 | Gantt com barras da baseline | **OK** | Barra fina da baseline mais recente sobre cada atividade, com liga/desliga na tela do cronograma |
 | P7 | Linhas de base múltiplas e comparação | Parcial | Aba **Linha de base**; EVM usa a mais recente (sem escolher qual é a "primária") |
-| P8 | Atualização de progresso | Parcial | % concluído editável por atividade (vale sobre o status); sem datas reais de início/término |
+| P8 | Atualização de progresso | **OK** | % concluído editável por atividade e **datas reais de início e término** (término real = 100% se o % não for informado); barra de execução real no Gantt e colunas no CSV |
 | P9 | Recursos e histograma | Parcial | `/pmo/recursos`: carga por responsável (1 pessoa por atividade), **diária por responsável e custo de mão de obra**, **sugestão de nivelamento** (não altera o plano). Sem calendário de recursos nem várias unidades por atividade na tela |
 | P10 | Planilha de custos (orçado, comprometido, realizado, previsão, variação) | OK | Aba **Custos** |
 | P11 | Curva S / fluxo de caixa | OK | Tela de cronograma |

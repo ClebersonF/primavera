@@ -25,6 +25,10 @@ export interface ActivityPlan {
   notBefore?: string;
   /** Código de atividade (grupo), texto livre até 40 caracteres. */
   group?: string;
+  /** Data real de início (YYYY-MM-DD). */
+  actualStart?: string;
+  /** Data real de término (YYYY-MM-DD, inclusive); implica 100% concluído se o % não for informado. */
+  actualFinish?: string;
 }
 
 export const RISK_STATUSES = ["aberto", "mitigando", "ocorrido", "encerrado"] as const;
@@ -223,6 +227,13 @@ function cleanActivityPlan(v: unknown): ActivityPlan | null {
     if (!validDate(v.notBefore)) return null;
     out.notBefore = v.notBefore;
   }
+  for (const k of ["actualStart", "actualFinish"] as const) {
+    if (v[k] !== undefined) {
+      if (!validDate(v[k])) return null;
+      out[k] = v[k] as string;
+    }
+  }
+  if (out.actualStart && out.actualFinish && out.actualFinish < out.actualStart) return null;
   if (v.group !== undefined) {
     if (typeof v.group !== "string") return null;
     const g = v.group.trim();
@@ -434,7 +445,7 @@ export function withActivityPlan(p: WorkPlanning, activityId: string, patch: Act
     else merged[k] = k === "group" ? String(v).trim() : v;
   }
   const clean = cleanActivityPlan(merged);
-  if (clean === null) throw new PmoError("Dados do cronograma da atividade inválidos (duração, percentual, data, predecessoras ou grupo).");
+  if (clean === null) throw new PmoError("Dados do cronograma da atividade inválidos (duração, percentual, datas — o término real não pode ser antes do início real —, predecessoras ou grupo).");
   if ((clean.predecessors ?? []).some((q) => q.id === activityId)) throw new PmoError("Uma atividade não pode ser predecessora de si mesma.");
   if (JSON.stringify(clean) === JSON.stringify(p.activityPlans[activityId] ?? {})) return p;
   const activityPlans = { ...p.activityPlans };

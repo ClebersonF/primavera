@@ -144,3 +144,18 @@ describe("histórico", () => {
     expect(n.history).toHaveLength(1);
   });
 });
+
+describe("datas reais", () => {
+  it("valida ordem e implica 100% com término real", () => {
+    expect(() => withActivityPlan(EMPTY_PLANNING, "a1", { actualStart: "2026-11-10", actualFinish: "2026-11-09" })).toThrow(PmoError);
+    expect(() => withActivityPlan(EMPTY_PLANNING, "a1", { actualStart: "2026-13-01" })).toThrow(PmoError);
+    const p = withActivityPlan(EMPTY_PLANNING, "a3", { actualStart: "2026-11-02", actualFinish: "2026-11-06" });
+    const w = work();
+    const merged = { ...w, activities: mergeActivityPlans(w.activities, p.activityPlans) };
+    const r = planWbs(workToWbsInputs(merged, calendarOf(p)).inputs);
+    expect(r.byId.get("a3")!.percentComplete).toBe(100);
+    const q = withActivityPlan(p, "a3", { percentComplete: 60 });
+    const m2 = { ...w, activities: mergeActivityPlans(w.activities, q.activityPlans) };
+    expect(planWbs(workToWbsInputs(m2, calendarOf(q)).inputs).byId.get("a3")!.percentComplete).toBe(60);
+  });
+});

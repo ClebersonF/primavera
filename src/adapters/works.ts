@@ -24,6 +24,9 @@ export interface ActivityLike {
   percentComplete?: number;
   /** "Não iniciar antes de" (YYYY-MM-DD). */
   notBefore?: string;
+  /** Datas reais (YYYY-MM-DD); o término real conta como 100% quando não há % informado. */
+  actualStart?: string;
+  actualFinish?: string;
 }
 
 export interface WorkLike {
@@ -123,7 +126,7 @@ export function workToWbsInputs(
       predecessors = [{ id: work.activities[i - 1]!.id }];
       chained = true;
     }
-    if (a.percentComplete === undefined && a.status === "doing") guessedPercent = true;
+    if (a.percentComplete === undefined && a.actualFinish === undefined && a.status === "doing") guessedPercent = true;
     let startNoEarlierThan: number | undefined;
     if (a.notBefore !== undefined) {
       const offset = workDaysBetween(startDate, dateOnly(a.notBefore), cal);
@@ -135,7 +138,7 @@ export function workToWbsInputs(
       name: a.title,
       duration: durations[i]!,
       plannedCost: costs[i]!,
-      percentComplete: a.percentComplete ?? PERCENT[a.status],
+      percentComplete: a.percentComplete ?? (a.actualFinish !== undefined ? 100 : PERCENT[a.status]),
       predecessors,
       startNoEarlierThan,
     };
