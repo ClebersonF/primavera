@@ -29,6 +29,7 @@ export {
 export { workToWbsInputs, type ActivityLike, type WorkLike, type WorkSchedule } from "./adapters/works";
 export * from "./tax/cbs";
 export * from "./licensing/graprohab";
+export * from "./licensing/gate";
 export * from "./evm/evm";
 export * from "./resources/histogram";
 export * from "./resources/leveling";

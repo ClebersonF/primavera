@@ -30,6 +30,8 @@ export interface ActivityPlan {
   deadline?: string;
   /** Código de atividade (grupo), texto livre até 40 caracteres. */
   group?: string;
+  /** Marco liberado pelo licenciamento: não começa antes da certidão (ou da data prevista) do GRAPROHAB. */
+  gate?: "graprohab";
   /** Valores dos campos próprios de escopo "atividade": id do campo → valor. */
   fields?: Record<string, FieldValue>;
   /** Restrição obrigatória: a atividade começa ou termina na data, prevalecendo sobre as predecessoras. */
@@ -453,6 +455,10 @@ function cleanActivityPlan(v: unknown): ActivityPlan | null {
     }
   }
   if (out.actualStart && out.actualFinish && out.actualFinish < out.actualStart) return null;
+  if (v.gate !== undefined) {
+    if (v.gate !== "graprohab") return null;
+    out.gate = "graprohab";
+  }
   if (v.group !== undefined) {
     if (typeof v.group !== "string") return null;
     const g = v.group.trim();
