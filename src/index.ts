@@ -46,3 +46,6 @@ export * from "./network/layout";
 export * from "./portfolio/whatif";
 export * from "./portfolio/views";
 export * from "./resources/profile";
+
+export * from "./import/activities";
+export * from "./feasibility/feasibility";
