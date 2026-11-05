@@ -268,6 +268,8 @@ export interface WorkPlanning {
   codeTypes: ActivityCodeType[];
   /** Tipo de empreendimento (loteamento, condomínio ou outro); ausente = não informado. */
   kind?: ProjectKind;
+  /** Estudo de viabilidade do empreendimento (premissas como digitadas); ausente = não elaborado. */
+  feasibility?: FeasibilityDraft;
   /** Programa ou carteira a que o projeto pertence (nível acima do projeto); ausente = sem programa. */
   program?: string;
 }
@@ -913,6 +915,8 @@ export function normalizePlanning(raw: unknown): WorkPlanning {
   const program = typeof raw.program === "string" ? normalizeProgramPath(raw.program) : null;
   if (program) result.program = program;
   if ((PROJECT_KINDS as readonly string[]).includes(raw.kind as string)) result.kind = raw.kind as ProjectKind;
+  const feasibility = cleanFeasibilityDraft(raw.feasibility);
+  if (feasibility) result.feasibility = feasibility;
   if (Number.isInteger(raw.primaryBaseline) && (raw.primaryBaseline as number) >= 0 && (raw.primaryBaseline as number) < baselines.length) {
     result.primaryBaseline = raw.primaryBaseline as number;
   }
@@ -1404,6 +1408,40 @@ export function overdueIssues(issues: readonly Issue[], today: string): Issue[] 
   return issues.filter((q) => q.status !== "resolvida" && q.dueDate !== undefined && q.dueDate < today);
 }
 
+/** Premissas do estudo de viabilidade como o usuário digitou (texto), para reabrir o formulário igual. */
+export interface FeasibilityDraft {
+  grossArea: string; cession: string; lotSize: string; price: string; land: string; taxRate: string; discount: string;
+  project: string; works: string; sales: string; salesStart: string; commission: string; marketing: string; admin: string; fees: string;
+  direct: { name: string; amount: string; phase: "projeto" | "obra" }[];
+}
+const FEASIBILITY_TEXT_KEYS = ["grossArea", "cession", "lotSize", "price", "land", "taxRate", "discount", "project", "works", "sales", "salesStart", "commission", "marketing", "admin", "fees"] as const;
+const MAX_FEASIBILITY_COSTS = 60;
+
+function cleanFeasibilityDraft(v: unknown): FeasibilityDraft | null {
+  if (!isObj(v) || !Array.isArray(v.direct)) return null;
+  const out: Record<string, unknown> = {};
+  for (const k of FEASIBILITY_TEXT_KEYS) {
+    if (typeof v[k] !== "string" || (v[k] as string).length > 40) return null;
+    out[k] = (v[k] as string).trim();
+  }
+  if (v.direct.length > MAX_FEASIBILITY_COSTS) return null;
+  const direct: FeasibilityDraft["direct"] = [];
+  for (const d of v.direct) {
+    if (!isObj(d) || typeof d.name !== "string" || typeof d.amount !== "string" || d.amount.length > 40) return null;
+    direct.push({ name: d.name.trim().slice(0, 120), amount: d.amount.trim(), phase: d.phase === "projeto" ? "projeto" : "obra" });
+  }
+  return { ...(out as Omit<FeasibilityDraft, "direct">), direct };
+}
+
+/** Grava (ou remove, com `undefined`) o estudo de viabilidade do empreendimento. */
+export function withFeasibility(p: WorkPlanning, draft: FeasibilityDraft | undefined): WorkPlanning {
+  const clean = draft === undefined ? undefined : cleanFeasibilityDraft(draft);
+  if (draft !== undefined && !clean) throw new PmoError("Estudo de viabilidade inválido: confira os campos (texto de até 40 caracteres, no máximo 60 custos).");
+  if (sameJson(clean ?? undefined, p.feasibility)) return p;
+  const { feasibility: _old, ...rest } = p;
+  return bump(clean ? ({ ...rest, feasibility: clean } as WorkPlanning) : (rest as WorkPlanning), {});
+}
+
 /** Define (ou limpa, com `undefined`) o tipo de empreendimento. */
 export function withProjectKind(p: WorkPlanning, kind: ProjectKind | undefined): WorkPlanning {
   if (kind !== undefined && !(PROJECT_KINDS as readonly string[]).includes(kind)) throw new PmoError(`Tipo de empreendimento inválido. Use: ${PROJECT_KINDS.join(", ")}.`);
@@ -1572,6 +1610,7 @@ export function describePlanningChange(prev: WorkPlanning, next: WorkPlanning): 
     else if (!sameJson(old, q)) out.push(`Questão ${q.id} atualizada${old.status !== q.status ? ` (${old.status} → ${q.status})` : ""}`);
   }
   for (const q of prev.issues) if (!next.issues.some((x) => x.id === q.id)) out.push(`Questão ${q.id} removida`);
+  if (!sameJson(prev.feasibility, next.feasibility)) out.push(next.feasibility ? "Estudo de viabilidade atualizado" : "Estudo de viabilidade removido");
   if (prev.kind !== next.kind) out.push(next.kind ? `Tipo de empreendimento: ${PROJECT_KIND_LABEL[next.kind]}` : "Tipo de empreendimento removido");
   if (prev.program !== next.program) out.push(next.program ? `Programa: ${next.program}` : "Programa removido");
   return out;

@@ -95,3 +95,19 @@ describe("robustez da viabilidade", () => {
     }
   });
 });
+
+import { withFeasibility } from "../src";
+describe("estudo de viabilidade no planejamento", () => {
+  const draft = { grossArea: "1000", cession: "50", lotSize: "400", price: "1000", land: "0", taxRate: "20", discount: "12", project: "6", works: "12", sales: "12", salesStart: "", commission: "5", marketing: "2", admin: "0", fees: "0", direct: [{ name: "Obra", amount: "1000", phase: "obra" as const }] };
+  it("grava, sobrevive à normalização e é idempotente", () => {
+    const p = withFeasibility(EMPTY_PLANNING, draft);
+    expect(p.feasibility).toEqual(draft);
+    expect(normalizePlanning(JSON.parse(JSON.stringify(p))).feasibility).toEqual(draft);
+    expect(withFeasibility(p, draft)).toBe(p);
+    expect(withFeasibility(p, undefined).feasibility).toBeUndefined();
+  });
+  it("rejeita rascunho inválido e descarta lixo ao carregar", () => {
+    expect(() => withFeasibility(EMPTY_PLANNING, { ...draft, grossArea: "x".repeat(41) })).toThrow(PmoError);
+    expect(normalizePlanning({ feasibility: { grossArea: 1 } }).feasibility).toBeUndefined();
+  });
+});
