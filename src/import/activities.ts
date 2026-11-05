@@ -111,7 +111,7 @@ export function parseDate(raw: string): string | null {
  * data início, data término, responsável, observações). Linhas em branco são ignoradas; o cabeçalho é reconhecido por nome.
  */
 export function parseActivityCsv(text: string): ImportResult {
-  const lines = text.replace(/^﻿/, "").split(/\r?\n/);
+  const lines = text.replace(/^\uFEFF/, "").split(/\r?\n/);
   const first = lines.find((l) => l.trim() !== "");
   if (!first) throw new PmoError("Arquivo vazio.");
   const sep = [";", "\t", ","].map((s) => [s, first.split(s).length] as const).sort((a, b) => b[1] - a[1])[0]![0];
