@@ -41,7 +41,7 @@ Atualizado em 04/11/2026. Legenda: **OK** atendido e validado · **Parcial** ate
 | G4 | Faixas de APP (Lei 12.651, art. 4º, I), nascentes 50 m, faixa não edificável 15 m | OK | `appBufferMeters`; tela |
 | G5 | Coerência do quadro de áreas entre planta, memorial e cartas | OK | `checkAreaTableConsistency`; seção "Quadro de áreas" |
 | G6 | Prazos reais de cada etapa | **Aberto** | O manual não os define; os usados são estimativas editáveis |
-| G7 | Acompanhar vários processos por empreendimento/imóvel | Parcial | O processo principal (GRAPROHAB) mais até 20 processos adicionais **por obra** (fases, outorgas, licenças), cada um com etapas, prazos, documentos, áreas e certidão, gravados com a obra; o portfólio mostra quantos há e quantos têm certidão. Sem cadastro próprio de empreendimento nem processo compartilhado entre obras |
+| G7 | Acompanhar vários processos por empreendimento/imóvel | Parcial | O processo principal (GRAPROHAB) mais até 20 processos adicionais **por obra** (fases, outorgas, licenças), cada um com etapas, prazos, documentos, áreas e certidão, gravados com a obra; o portfólio mostra quantos há e quantos têm certidão. Cada obra tem **tipo de empreendimento** (loteamento, condomínio ou outro) com modelo de atividades; loteamento e condomínio sem processo iniciado geram alerta no portfólio. Sem cadastro próprio de empreendimento nem processo compartilhado entre obras |
 
 ## 4. Paridade funcional com o Oracle Primavera (P6 / Unifier)
 

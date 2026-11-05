@@ -81,3 +81,13 @@ describe("consolidação por programa", () => {
     expect(rollupPrograms([])).toEqual([]);
   });
 });
+
+import { evaluateThresholds as evalLic } from "../src";
+describe("alerta de licenciamento pendente", () => {
+  it("avisa só quando sinalizado", () => {
+    const base = { spi: 1, cpi: 1, daysToDeadline: 400, severeRisks: 0, overdueIssues: 0 };
+    expect(evalLic(base).some((a) => a.code === "licenciamento")).toBe(false);
+    const a = evalLic({ ...base, licensingPending: true }).find((x) => x.code === "licenciamento");
+    expect(a?.severity).toBe("atencao");
+  });
+});

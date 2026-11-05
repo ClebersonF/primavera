@@ -40,10 +40,12 @@ export interface ThresholdMetrics {
   deadlineViolations?: number;
   /** Contratos com pagamentos (realizados + previstos) acima do valor vigente. */
   overCommittedContracts?: number;
+  /** Empreendimento que exige GRAPROHAB/CETESB (loteamento ou condomínio) sem nenhum processo iniciado. */
+  licensingPending?: boolean;
 }
 
 export type AlertSeverity = "atencao" | "critico";
-export type AlertCode = "spi" | "cpi" | "prazo" | "riscos" | "questoes" | "restricoes" | "contratos";
+export type AlertCode = "spi" | "cpi" | "prazo" | "riscos" | "questoes" | "restricoes" | "contratos" | "licenciamento";
 
 export interface ThresholdAlert {
   code: AlertCode;
@@ -74,6 +76,7 @@ export function evaluateThresholds(m: ThresholdMetrics, rules: ThresholdRules = 
   if (m.overdueIssues >= rules.overdueIssuesWarn && m.overdueIssues > 0) out.push({ code: "questoes", severity: m.overdueIssues >= rules.overdueIssuesCritical ? "critico" : "atencao", message: `${m.overdueIssues} questão(ões) com prazo vencido` });
   if ((m.deadlineViolations ?? 0) > 0) out.push({ code: "restricoes", severity: "critico", message: `${m.deadlineViolations} atividade(s) com “terminar até” violado` });
   if ((m.overCommittedContracts ?? 0) > 0) out.push({ code: "contratos", severity: "critico", message: `${m.overCommittedContracts} contrato(s) com pagamentos acima do valor vigente` });
+  if (m.licensingPending) out.push({ code: "licenciamento", severity: "atencao", message: "Licenciamento (GRAPROHAB/CETESB) ainda não iniciado" });
   return out.sort((a, b) => Number(b.severity === "critico") - Number(a.severity === "critico"));
 }
 
