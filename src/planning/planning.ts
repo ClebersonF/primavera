@@ -78,6 +78,10 @@ export function stepsPercent(steps: readonly ActivityStep[] | undefined): number
   return Math.round((done / total) * 1000) / 10;
 }
 
+export const PROJECT_KINDS = ["loteamento", "condominio", "outro"] as const;
+export type ProjectKind = (typeof PROJECT_KINDS)[number];
+export const PROJECT_KIND_LABEL: Record<ProjectKind, string> = { loteamento: "Loteamento", condominio: "Condomínio", outro: "Outro" };
+
 export const FIELD_KINDS = ["texto", "numero", "data"] as const;
 export type FieldKind = (typeof FIELD_KINDS)[number];
 export const FIELD_SCOPES = ["atividade", "projeto"] as const;
@@ -260,6 +264,8 @@ export interface WorkPlanning {
   approvalFlow: ApprovalStep[];
   /** Tipos de código de atividade definidos para a obra. */
   codeTypes: ActivityCodeType[];
+  /** Tipo de empreendimento (loteamento, condomínio ou outro); ausente = não informado. */
+  kind?: ProjectKind;
   /** Programa ou carteira a que o projeto pertence (nível acima do projeto); ausente = sem programa. */
   program?: string;
 }
@@ -900,6 +906,7 @@ export function normalizePlanning(raw: unknown): WorkPlanning {
   if (impact) result.impact = impact;
   const program = typeof raw.program === "string" ? normalizeProgramPath(raw.program) : null;
   if (program) result.program = program;
+  if ((PROJECT_KINDS as readonly string[]).includes(raw.kind as string)) result.kind = raw.kind as ProjectKind;
   if (Number.isInteger(raw.primaryBaseline) && (raw.primaryBaseline as number) >= 0 && (raw.primaryBaseline as number) < baselines.length) {
     result.primaryBaseline = raw.primaryBaseline as number;
   }
@@ -1391,6 +1398,14 @@ export function overdueIssues(issues: readonly Issue[], today: string): Issue[] 
   return issues.filter((q) => q.status !== "resolvida" && q.dueDate !== undefined && q.dueDate < today);
 }
 
+/** Define (ou limpa, com `undefined`) o tipo de empreendimento. */
+export function withProjectKind(p: WorkPlanning, kind: ProjectKind | undefined): WorkPlanning {
+  if (kind !== undefined && !(PROJECT_KINDS as readonly string[]).includes(kind)) throw new PmoError(`Tipo de empreendimento inválido. Use: ${PROJECT_KINDS.join(", ")}.`);
+  if (kind === p.kind) return p;
+  const { kind: _old, ...rest } = p;
+  return bump(kind ? ({ ...rest, kind } as WorkPlanning) : (rest as WorkPlanning), {});
+}
+
 /** Define (ou limpa, com texto vazio) o programa do projeto. */
 export function withProgram(p: WorkPlanning, program: string | undefined): WorkPlanning {
   const clean = program === undefined ? undefined : normalizeProgramPath(program) || undefined;
@@ -1551,6 +1566,7 @@ export function describePlanningChange(prev: WorkPlanning, next: WorkPlanning): 
     else if (!sameJson(old, q)) out.push(`Questão ${q.id} atualizada${old.status !== q.status ? ` (${old.status} → ${q.status})` : ""}`);
   }
   for (const q of prev.issues) if (!next.issues.some((x) => x.id === q.id)) out.push(`Questão ${q.id} removida`);
+  if (prev.kind !== next.kind) out.push(next.kind ? `Tipo de empreendimento: ${PROJECT_KIND_LABEL[next.kind]}` : "Tipo de empreendimento removido");
   if (prev.program !== next.program) out.push(next.program ? `Programa: ${next.program}` : "Programa removido");
   return out;
 }
