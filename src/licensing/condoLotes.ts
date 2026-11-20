@@ -89,3 +89,56 @@ export const CONDO_LOTES_GATES: readonly { id: string; name: string }[] = [
   { id: "G7", name: "Incorporação registrada em cartório" },
   { id: "G8", name: "Condomínio apto à operação e comercialização" },
 ];
+
+/** Mínimos por município. A chave é o nome normalizado (sem acento, minúsculo); o valor guarda o nome de exibição. */
+export interface MunicipalRulesEntry {
+  name: string;
+  rules: CondoLotesRules;
+  /** Lei ou decreto de onde os valores foram conferidos (texto livre; vazio = não conferido). */
+  source: string;
+}
+export type MunicipalRulesTable = Readonly<Record<string, MunicipalRulesEntry>>;
+
+export const municipalityKey = (name: string): string =>
+  name.normalize("NFD").replace(/[̀-ͯ]/g, "").trim().replace(/\s+/g, " ").toLowerCase();
+
+/** Cadastra ou atualiza os mínimos de um município, sem alterar a tabela original. */
+export function withMunicipalRules(table: MunicipalRulesTable, name: string, rules: CondoLotesRules, source = ""): MunicipalRulesTable {
+  const key = municipalityKey(name);
+  if (key === "") throw new PmoError("Informe o nome do município.");
+  if (key === "__proto__" || key === "constructor" || key === "prototype") throw new PmoError("Nome de município inválido.");
+  validateCondoLotesRules(rules);
+  return { ...table, [key]: { name: name.trim().replace(/\s+/g, " "), rules: { ...rules }, source: source.trim() } };
+}
+
+export function withoutMunicipalRules(table: MunicipalRulesTable, name: string): MunicipalRulesTable {
+  const key = municipalityKey(name);
+  const next: Record<string, MunicipalRulesEntry> = {};
+  for (const [k, v] of Object.entries(table)) if (k !== key) next[k] = v;
+  return next;
+}
+
+/** Regras do município; sem cadastro, os padrões — e `isDefault` avisa que o valor não foi conferido para o município. */
+export function resolveMunicipalRules(table: MunicipalRulesTable, name: string): { rules: CondoLotesRules; isDefault: boolean; source: string } {
+  const e = Object.prototype.hasOwnProperty.call(table, municipalityKey(name)) ? table[municipalityKey(name)] : undefined;
+  return e ? { rules: e.rules, isDefault: false, source: e.source } : { rules: CONDO_LOTES_DEFAULT_RULES, isDefault: true, source: "" };
+}
+
+/** Lê uma tabela salva (ex.: do navegador) descartando entradas inválidas em vez de falhar. */
+export function parseMunicipalRulesTable(raw: unknown): MunicipalRulesTable {
+  let table: MunicipalRulesTable = {};
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return table;
+  for (const v of Object.values(raw as Record<string, unknown>)) {
+    if (typeof v !== "object" || v === null) continue;
+    const e = v as Record<string, unknown>;
+    if (typeof e.name !== "string" || typeof e.rules !== "object" || e.rules === null) continue;
+    const r = e.rules as Record<string, unknown>;
+    const rules = { fenceMinHeightM: r.fenceMinHeightM, roadMinWidthM: r.roadMinWidthM, sidewalkMinWidthM: r.sidewalkMinWidthM, culDeSacMinDiameterM: r.culDeSacMinDiameterM, registryMaxAgeDays: r.registryMaxAgeDays } as CondoLotesRules;
+    try {
+      table = withMunicipalRules(table, e.name, rules, typeof e.source === "string" ? e.source : "");
+    } catch {
+      /* entrada inválida: ignorada */
+    }
+  }
+  return table;
+}

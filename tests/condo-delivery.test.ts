@@ -73,3 +73,26 @@ describe("compromisso ligado a uma atividade", () => {
     expect(() => withDeliveryCommitment(EMPTY_PLANNING, { date: "2027-06-30", toleranceDays: 1, activityId: "" })).toThrow(PmoError);
   });
 });
+
+import { municipalityKey, withMunicipalRules, withoutMunicipalRules, resolveMunicipalRules, parseMunicipalRulesTable, CONDO_LOTES_DEFAULT_RULES } from "../src";
+describe("mínimos por município", () => {
+  const rules = { ...CONDO_LOTES_DEFAULT_RULES, roadMinWidthM: 8 };
+  it("normaliza o nome e resolve com e sem cadastro", () => {
+    expect(municipalityKey("  Pedro  de Toledó ")).toBe("pedro de toledo");
+    const t = withMunicipalRules({}, "Pedro de Toledo", rules, "Lei 1.849/2026");
+    expect(resolveMunicipalRules(t, "PEDRO DE TOLEDO")).toMatchObject({ isDefault: false, source: "Lei 1.849/2026" });
+    expect(resolveMunicipalRules(t, "PEDRO DE TOLEDO").rules.roadMinWidthM).toBe(8);
+    expect(resolveMunicipalRules(t, "Itanhaém").isDefault).toBe(true);
+    expect(Object.keys(withoutMunicipalRules(t, "pedro de toledo"))).toHaveLength(0);
+  });
+  it("rejeita nome vazio, chave perigosa e valor inválido", () => {
+    expect(() => withMunicipalRules({}, "  ", rules)).toThrow();
+    expect(() => withMunicipalRules({}, "__proto__", rules)).toThrow();
+    expect(() => withMunicipalRules({}, "X", { ...rules, roadMinWidthM: -1 })).toThrow();
+  });
+  it("lê tabela salva descartando lixo", () => {
+    const t = parseMunicipalRulesTable({ a: { name: "Ok", rules, source: "" }, b: { name: 3 }, c: null, d: { name: "Ruim", rules: { ...rules, fenceMinHeightM: "x" } } });
+    expect(Object.keys(t)).toEqual(["ok"]);
+    expect(parseMunicipalRulesTable("lixo")).toEqual({});
+  });
+});
