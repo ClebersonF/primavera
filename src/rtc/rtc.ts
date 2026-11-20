@@ -156,6 +156,10 @@ export const RTC_ACTIONS = {
   "classificacoes-cbs-ibs": { service: "regime", method: "GET", path: "/api/calculadora/dados-abertos/situacoes-tributarias/cbs-ibs" },
   "ncm": { service: "regime", method: "GET", path: "/api/calculadora/dados-abertos/ncm" },
   "nbs": { service: "regime", method: "GET", path: "/api/calculadora/dados-abertos/nbs" },
+  "municipios": { service: "regime", method: "GET", path: "/api/calculadora/dados-abertos/ufs/municipios" },
+  "nbs-lista": { service: "regime", method: "GET", path: "/api/calculadora/dados-abertos/nbs/lista" },
+  "classificacoes-lista": { service: "regime", method: "GET", path: "/api/calculadora/dados-abertos/classificacoes-tributarias/cbs-ibs" },
+  "classificacoes-por-nbs": { service: "regime", method: "GET", path: "/api/calculadora/dados-abertos/classificacoes-tributarias/nbs" },
   "danfse": { service: "danfse", method: "POST", path: "/api/danfse" },
 } as const satisfies Record<string, { service: RtcService; method: "GET" | "POST"; path: string }>;
 export type RtcAction = keyof typeof RTC_ACTIONS;
@@ -173,4 +177,22 @@ export function rtcUrl(baseUrl: string, action: RtcAction, query: Record<string,
   const url = new URL(base.origin + base.pathname.replace(/\/+$/, "") + RTC_ACTIONS[action].path);
   for (const [k, v] of Object.entries(query)) if (v !== undefined) url.searchParams.set(k, String(v));
   return url.toString();
+}
+
+/** O CST é o prefixo de 3 dígitos da classificação tributária (cClassTrib 200028 → CST 200). */
+export const cstFromClassTrib = (cClassTrib: string): string => (/^\d{6}$/.test(cClassTrib) ? cClassTrib.slice(0, 3) : "");
+
+const fold = (v: string) => v.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+
+/** Busca por código ou por todas as palavras da descrição, sem acento nem caixa. Sem termo, devolve os primeiros. */
+export function searchRtcCatalog<T extends { codigo: string | number; descricao?: string; nome?: string }>(items: readonly T[], term: string, limit = 30): T[] {
+  const words = fold(term).split(/\s+/).filter(Boolean);
+  if (words.length === 0) return items.slice(0, limit);
+  const out: T[] = [];
+  for (const it of items) {
+    const hay = fold(`${it.codigo} ${it.descricao ?? ""} ${it.nome ?? ""}`);
+    if (words.every((w) => hay.includes(w))) out.push(it);
+    if (out.length >= limit) break;
+  }
+  return out;
 }

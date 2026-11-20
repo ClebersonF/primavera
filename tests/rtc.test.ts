@@ -57,3 +57,70 @@ describe("RTC — destinos", () => {
     expect(() => rtcUrl("nada", "ncm")).toThrow(PmoError);
   });
 });
+
+import { EMPTY_PLANNING, assessWorkCbsOfficial, buildWorkRtcOperacao, describePlanningChange, normalizePlanning, withTax, withTaxOfficialConfig, withTaxOfficialResult, type TaxOfficialConfig } from "../src";
+
+describe("RTC — cálculo oficial na obra", () => {
+  const line = { nbs: "122011200", cst: "000", cClassTrib: "000001" };
+  const cfg: TaxOfficialConfig = { date: "2027-03-10", municipio: "3550308", uf: "SP", engineering: line, software: { ...line, nbs: "111032100" }, aliquotas: aliq };
+  const resumo = { itens: [], vCBS: 8000, vIBS: 100, vIS: 0, incompleto: false, simulado: true };
+  const base0 = withTax(EMPTY_PLANNING, { engineeringShare: 0.7, purchases: [{ id: "NF-001", category: "cloud", cbsDestacada: 500, supplierIsRegularPJ: true }] });
+
+  it("monta a operação com a mesma divisão da estimativa e omite linha zerada", () => {
+    const p = withTaxOfficialConfig(base0, cfg);
+    const op = buildWorkRtcOperacao(100000, p.tax!, "x1");
+    expect(op.itens.map((i) => i.baseCalculo)).toEqual([70000, 30000]);
+    expect(op.itens[1]?.nbs).toBe("111032100");
+    expect(op.dhFatoGerador).toBe("2027-03-10T12:00:00-03:00");
+    const soEng = withTaxOfficialConfig(withTax(EMPTY_PLANNING, { engineeringShare: 1, purchases: [] }), cfg);
+    expect(buildWorkRtcOperacao(100000, soEng.tax!, "x2").itens).toHaveLength(1);
+    expect(() => buildWorkRtcOperacao(0, p.tax!, "x3")).toThrow(/orçamento/);
+  });
+  it("antes de 2027 não envia alíquotas; a partir de 2027 exige", () => {
+    const antes = withTaxOfficialConfig(base0, { ...cfg, date: "2026-11-20" });
+    expect(buildWorkRtcOperacao(1000, antes.tax!, "a").itens[0]?.aliquotasNominais).toBeUndefined();
+    const sem = withTaxOfficialConfig(base0, { ...cfg, aliquotas: undefined });
+    expect(() => buildWorkRtcOperacao(1000, sem.tax!, "b")).toThrow(/2027/);
+    expect(() => buildWorkRtcOperacao(1000, base0.tax!, "c")).toThrow(/classificação/);
+  });
+  it("só usa o valor oficial quando vigente: mesma base, tudo calculado", () => {
+    let p = withTaxOfficialConfig(base0, cfg);
+    expect(assessWorkCbsOfficial(100000, p.tax).status).toBe("nao_calculado");
+    expect(assessWorkCbsOfficial(100000, base0.tax).status).toBe("sem_classificacao");
+    p = withTaxOfficialResult(p, 100000, resumo, "2026-11-20T15:00:00Z");
+    const r = assessWorkCbsOfficial(100000, p.tax);
+    expect(r.status).toBe("vigente");
+    expect(r.official).toMatchObject({ debitCbs: 8000, credit: 500, balance: 7500, payable: 7500, ibs: 100, simulado: true });
+    expect(assessWorkCbsOfficial(120000, p.tax).status).toBe("desatualizado");
+    expect(assessWorkCbsOfficial(100000, withTax(p, { ...p.tax!, engineeringShare: 0.5 }).tax).status).toBe("desatualizado");
+    const parcial = withTaxOfficialResult(p, 100000, { ...resumo, incompleto: true, itens: [{ numero: 2, estado: "INCONSISTENCIA_ENTRADA", vCBS: 0, vIBS: 0, vIS: 0, erros: [{ code: "REG-011", title: "t", detail: "d" }] }] }, "2026-11-20T16:00:00Z");
+    expect(assessWorkCbsOfficial(100000, parcial.tax)).toEqual({ status: "incompleto", official: null });
+    expect(parcial.tax?.official?.result?.erros).toEqual(["Item 2: REG-011 — d"]);
+  });
+  it("mudar a classificação descarta o resultado; regravar a mesma mantém; sobrevive à normalização", () => {
+    const p = withTaxOfficialResult(withTaxOfficialConfig(base0, cfg), 100000, resumo, "2026-11-20T15:00:00Z");
+    expect(withTaxOfficialConfig(p, cfg)).toBe(p);
+    expect(withTaxOfficialConfig(p, { ...cfg, uf: "RJ" }).tax?.official?.result).toBeUndefined();
+    expect(withTaxOfficialConfig(p, null).tax?.official).toBeUndefined();
+    expect(normalizePlanning(JSON.parse(JSON.stringify(p))).tax).toEqual(p.tax);
+    expect(() => withTaxOfficialConfig(base0, { ...cfg, municipio: "12" })).toThrow();
+    expect(describePlanningChange(withTaxOfficialConfig(base0, cfg), p)).toContain("Cálculo oficial de CBS/IBS gravado");
+    expect(describePlanningChange(base0, withTaxOfficialConfig(base0, cfg))).toContain("Classificação tributária da obra atualizada");
+  });
+});
+
+import { cstFromClassTrib, searchRtcCatalog } from "../src";
+describe("RTC — localizar códigos", () => {
+  it("CST é o prefixo da classificação; entrada inválida não gera CST", () => {
+    expect(cstFromClassTrib("200028")).toBe("200");
+    expect(cstFromClassTrib("28")).toBe("");
+  });
+  it("busca por código ou palavras, sem acento, com limite", () => {
+    const itens = [{ codigo: "114031100", descricao: "Serviços de engenharia de projetos de construção" }, { codigo: 3550308, nome: "São Paulo" }, { codigo: "111032100", descricao: "Licenciamento de programas de computador" }];
+    expect(searchRtcCatalog(itens, "ENGENHARIA construcao").map((i) => i.codigo)).toEqual(["114031100"]);
+    expect(searchRtcCatalog(itens, "sao paulo")[0]?.codigo).toBe(3550308);
+    expect(searchRtcCatalog(itens, "3550")).toHaveLength(1);
+    expect(searchRtcCatalog(itens, "", 2)).toHaveLength(2);
+    expect(searchRtcCatalog(itens, "inexistente")).toEqual([]);
+  });
+});

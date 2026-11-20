@@ -10,6 +10,7 @@ import { addDaysIso, parseIsoDate } from "../dates";
 import { PmoError } from "../errors";
 import { MAX_SCENARIOS, validateScenario, type Scenario } from "../scenarios/scenario";
 import { assessCbs, splitInvoice, type CbsAssessment, type Purchase, type PurchaseCategory } from "../tax/cbs";
+import { buildRtcOperacao, type RtcItemInput, type RtcOperacaoRegimeGeral, type RtcResumo } from "../rtc/rtc";
 
 export interface CostEntry {
   committed?: number;
@@ -179,6 +180,50 @@ export interface TaxState {
   /** 0..1: parte do faturamento (orçamento da obra) que é serviço de engenharia; o resto é licença de software. */
   engineeringShare: number;
   purchases: TaxPurchase[];
+  /** Cálculo pela calculadora oficial da Receita (RTC). Ausente = a obra usa só a estimativa do estudo. */
+  official?: TaxOfficial;
+}
+
+/** Classificação de uma linha da nota para a calculadora da Receita. */
+export interface TaxOfficialLine {
+  /** NBS do serviço (9 dígitos). */
+  nbs: string;
+  cst: string;
+  cClassTrib: string;
+}
+
+/** Parâmetros da operação da obra na calculadora oficial. */
+export interface TaxOfficialConfig {
+  /** Data do fato gerador (YYYY-MM-DD). */
+  date: string;
+  /** Código IBGE do município (7 dígitos). */
+  municipio: string;
+  uf: string;
+  engineering: TaxOfficialLine;
+  software: TaxOfficialLine;
+  /** Alíquotas nominais em pontos percentuais; obrigatórias a partir de 2027 e proibidas antes. */
+  aliquotas?: { cbs: number; ibsEstadual: number; ibsMunicipal: number };
+}
+
+/** Última resposta da calculadora oficial, com a base usada — para saber se ainda vale. */
+export interface TaxOfficialResult {
+  /** Momento do cálculo (ISO). */
+  at: string;
+  /** Orçamento e fatia de engenharia usados; se mudarem, o resultado está desatualizado. */
+  budget: number;
+  engineeringShare: number;
+  vCBS: number;
+  vIBS: number;
+  vIS: number;
+  incompleto: boolean;
+  simulado: boolean;
+  /** Mensagens de erro por item devolvidas pela calculadora (vazio quando tudo calculou). */
+  erros: string[];
+}
+
+export interface TaxOfficial {
+  config: TaxOfficialConfig;
+  result?: TaxOfficialResult;
 }
 
 /** Estado do licenciamento GRAPROHAB/CETESB da obra, como digitado na tela (textos). */
@@ -715,7 +760,47 @@ export function cleanTax(v: unknown): TaxState | null {
     if (x.linkedToActivity !== undefined) q.linkedToActivity = x.linkedToActivity;
     purchases.push(q);
   }
-  return { engineeringShare: v.engineeringShare, purchases };
+  const out: TaxState = { engineeringShare: v.engineeringShare, purchases };
+  if (v.official !== undefined) {
+    const official = cleanTaxOfficial(v.official);
+    if (official === null) return null;
+    out.official = official;
+  }
+  return out;
+}
+
+const digits = (v: unknown, len: number): v is string => typeof v === "string" && v.length === len && /^\d+$/.test(v);
+const pctPoints = (v: unknown): v is number => isNum(v) && v >= 0 && v <= 100;
+
+function cleanTaxOfficialLine(v: unknown): TaxOfficialLine | null {
+  if (!isObj(v) || !digits(v.nbs, 9) || !digits(v.cst, 3) || !digits(v.cClassTrib, 6)) return null;
+  return { nbs: v.nbs, cst: v.cst, cClassTrib: v.cClassTrib };
+}
+
+function cleanTaxOfficial(v: unknown): TaxOfficial | null {
+  if (!isObj(v) || !isObj(v.config)) return null;
+  const c = v.config;
+  const engineering = cleanTaxOfficialLine(c.engineering);
+  const software = cleanTaxOfficialLine(c.software);
+  if (!validDate(c.date) || !digits(c.municipio, 7) || typeof c.uf !== "string" || !/^[A-Z]{2}$/.test(c.uf) || !engineering || !software) return null;
+  const config: TaxOfficialConfig = { date: c.date, municipio: c.municipio, uf: c.uf, engineering, software };
+  if (c.aliquotas !== undefined) {
+    const a = c.aliquotas;
+    if (!isObj(a) || !pctPoints(a.cbs) || !pctPoints(a.ibsEstadual) || !pctPoints(a.ibsMunicipal)) return null;
+    config.aliquotas = { cbs: a.cbs, ibsEstadual: a.ibsEstadual, ibsMunicipal: a.ibsMunicipal };
+  }
+  const out: TaxOfficial = { config };
+  if (v.result !== undefined) {
+    const r = v.result;
+    if (!isObj(r) || typeof r.at !== "string" || Number.isNaN(Date.parse(r.at)) || r.at.length > 40) return null;
+    if (!isMoney(r.budget) || !isNum(r.engineeringShare) || !isMoney(r.vCBS) || !isMoney(r.vIBS) || !isMoney(r.vIS)) return null;
+    if (typeof r.incompleto !== "boolean" || typeof r.simulado !== "boolean" || !Array.isArray(r.erros)) return null;
+    out.result = {
+      at: r.at, budget: r.budget, engineeringShare: r.engineeringShare, vCBS: r.vCBS, vIBS: r.vIBS, vIS: r.vIS, incompleto: r.incompleto, simulado: r.simulado,
+      erros: r.erros.filter((e): e is string => typeof e === "string").slice(0, 10).map((e) => e.slice(0, 300)),
+    };
+  }
+  return out;
 }
 
 function cleanHolidays(v: unknown): string[] {
@@ -1393,6 +1478,78 @@ export function assessWorkCbs(budget: number, state: TaxState = EMPTY_TAX): { as
   return { assessment, blendedRate: split.blendedRate };
 }
 
+/** A calculadora só aceita alíquotas informadas a partir de 2027 (antes disso, usa as da própria base). */
+export const rtcRequiresAliquotas = (date: string): boolean => Number(date.slice(0, 4)) >= 2027;
+
+/**
+ * Operação da obra para a calculadora oficial: o orçamento vira até duas linhas (serviço de engenharia e licença de
+ * software), na mesma divisão usada pela estimativa. Linha com base zero não é enviada.
+ */
+export function buildWorkRtcOperacao(budget: number, state: TaxState, id: string): RtcOperacaoRegimeGeral {
+  const cfg = state.official?.config;
+  if (!cfg) throw new PmoError("Informe a classificação tributária da obra antes de calcular.");
+  const needs = rtcRequiresAliquotas(cfg.date);
+  if (needs && !cfg.aliquotas) throw new PmoError("A partir de 2027 a calculadora exige as alíquotas de CBS e IBS.");
+  const split = splitInvoice(budget, state.engineeringShare);
+  const lines = [cfg.engineering, cfg.software];
+  const itens: RtcItemInput[] = [];
+  split.lines.forEach((l, i) => {
+    if (l.base <= 0) return;
+    const c = lines[i]!;
+    itens.push({ numero: itens.length + 1, nbs: c.nbs, cst: c.cst, cClassTrib: c.cClassTrib, baseCalculo: l.base, aliquotasNominais: needs ? cfg.aliquotas : undefined });
+  });
+  if (itens.length === 0) throw new PmoError("A obra não tem orçamento para calcular.");
+  // Meio-dia no horário de Brasília: evita que a data mude por fuso.
+  return buildRtcOperacao({ id, dhFatoGerador: `${cfg.date}T12:00:00-03:00`, municipio: Number(cfg.municipio), uf: cfg.uf, itens });
+}
+
+/** Grava a classificação da obra para a calculadora oficial. Mudar a classificação descarta o resultado anterior. */
+export function withTaxOfficialConfig(p: WorkPlanning, config: TaxOfficialConfig | null): WorkPlanning {
+  const tax = p.tax ?? EMPTY_TAX;
+  if (config === null) {
+    if (!tax.official) return p;
+    return withTax(p, { engineeringShare: tax.engineeringShare, purchases: tax.purchases });
+  }
+  const same = tax.official && JSON.stringify(cleanTaxOfficial({ config })?.config) === JSON.stringify(tax.official.config);
+  return withTax(p, { ...tax, official: same ? tax.official! : { config } });
+}
+
+/** Grava a resposta da calculadora oficial na obra, junto com a base (orçamento e fatia) que foi calculada. */
+export function withTaxOfficialResult(p: WorkPlanning, budget: number, resumo: RtcResumo, at: string): WorkPlanning {
+  const tax = p.tax ?? EMPTY_TAX;
+  if (!tax.official) throw new PmoError("Informe a classificação tributária da obra antes de gravar o cálculo.");
+  const erros = resumo.itens.flatMap((i) => i.erros.map((e) => `Item ${i.numero}: ${[e.code, e.detail ?? e.title].filter(Boolean).join(" — ")}`));
+  return withTax(p, {
+    ...tax,
+    official: { config: tax.official.config, result: { at, budget, engineeringShare: tax.engineeringShare, vCBS: resumo.vCBS, vIBS: resumo.vIBS, vIS: resumo.vIS, incompleto: resumo.incompleto, simulado: resumo.simulado, erros } },
+  });
+}
+
+export type TaxOfficialStatus = "sem_classificacao" | "nao_calculado" | "desatualizado" | "incompleto" | "vigente";
+
+/**
+ * Apuração da obra com o débito oficial. O crédito das compras segue a regra local (a calculadora da Receita calcula o
+ * débito da operação, não o crédito). Só usa o valor oficial quando ele está vigente: calculado para o orçamento e a fatia
+ * atuais e com todos os itens calculados. Nos demais casos devolve `official: null` e a tela mostra a estimativa.
+ */
+export function assessWorkCbsOfficial(budget: number, state: TaxState = EMPTY_TAX): {
+  status: TaxOfficialStatus;
+  official: { debitCbs: number; ibs: number; is: number; credit: number; balance: number; payable: number; carryForward: number; simulado: boolean; at: string } | null;
+} {
+  const o = state.official;
+  if (!o) return { status: "sem_classificacao", official: null };
+  const r = o.result;
+  if (!r) return { status: "nao_calculado", official: null };
+  if (r.budget !== budget || r.engineeringShare !== state.engineeringShare) return { status: "desatualizado", official: null };
+  if (r.incompleto) return { status: "incompleto", official: null };
+  const credit = assessCbs([], state.purchases).credit;
+  const balance = Math.round((r.vCBS - credit) * 100) / 100;
+  return {
+    status: "vigente",
+    official: { debitCbs: r.vCBS, ibs: r.vIBS, is: r.vIS, credit, balance, payable: Math.max(0, balance), carryForward: Math.max(0, -balance), simulado: r.simulado, at: r.at },
+  };
+}
+
 /** Cria ou atualiza (pelo id) um cenário "e se". */
 /** Cria ou atualiza (pelo id) uma questão. */
 export function withIssue(p: WorkPlanning, issue: Issue): WorkPlanning {
@@ -1580,7 +1737,13 @@ export function describePlanningChange(prev: WorkPlanning, next: WorkPlanning): 
   for (const sc of next.scenarios) if (!prev.scenarios.some((x) => x.id === sc.id)) out.push(`Cenário ${sc.id} criado: ${sc.name}`);
   for (const sc of prev.scenarios) if (!next.scenarios.some((x) => x.id === sc.id)) out.push(`Cenário ${sc.id} removido`);
   if (!sameJson(prev.impact, next.impact)) out.push("Impacto socioambiental atualizado");
-  if (!sameJson(prev.tax, next.tax)) out.push("CBS da obra atualizada");
+  if (!sameJson(prev.tax, next.tax)) {
+    const a = prev.tax?.official;
+    const b = next.tax?.official;
+    if (!sameJson(a?.result, b?.result) && b?.result) out.push(b.result.incompleto ? "Cálculo oficial de CBS/IBS gravado (parcial)" : "Cálculo oficial de CBS/IBS gravado");
+    else if (!sameJson(a?.config, b?.config)) out.push(b ? "Classificação tributária da obra atualizada" : "Classificação tributária da obra removida");
+    else out.push("CBS da obra atualizada");
+  }
   if (!sameJson(prev.licensing, next.licensing)) out.push("Licenciamento GRAPROHAB atualizado");
   for (const l of next.licenses) {
     const old = prev.licenses.find((x) => x.id === l.id);

@@ -81,9 +81,37 @@ Publique os três atrás de HTTPS e restrinja o acesso de rede à função de bo
 - A resposta é HTTP 200 mesmo com itens em erro: o total soma só os itens calculados, e a tela marca "Total parcial".
 - `CALCULO_SIMULADO` = calculado com alíquotas informadas por quem chamou.
 
+## Cálculo oficial na obra (aba Tributos do planejamento)
+
+- A seção **Cálculo oficial — calculadora da Receita Federal** grava na obra a classificação (data, município, UF e, para
+  cada linha da nota, NBS, CST e cClassTrib) e a última resposta da calculadora.
+- O orçamento da obra é enviado em até duas linhas (serviço de engenharia e licença de software), na mesma divisão da
+  estimativa. Linha com fatia zero não é enviada.
+- O débito de CBS passa a ser o oficial; o **crédito das compras continua pela regra local** (a calculadora calcula o
+  débito da operação, não o crédito). O IBS é exibido sem apuração de crédito.
+- O valor oficial só é usado quando está **vigente**: calculado para o orçamento e a fatia atuais e com todos os itens
+  calculados. Se o orçamento ou a fatia mudar, ou algum item falhar, a tela avisa e volta a valer a estimativa.
+- Mudar a classificação descarta o resultado anterior. Cada gravação entra no histórico do planejamento.
+- Funções: `buildWorkRtcOperacao`, `withTaxOfficialConfig`, `withTaxOfficialResult`, `assessWorkCbsOfficial` (`src/planning/planning.ts`).
+
+## Como preencher — de onde vem cada informação
+
+| Campo | O que é | Onde achar |
+|---|---|---|
+| Data do fato gerador | Dia da prestação do serviço ou da emissão da nota | Contrato ou medição; define alíquotas e regras vigentes |
+| Município (IBGE, 7 dígitos) e UF | Local da operação | Botão **Localizar município**; site do IBGE; campo `cMun` das notas |
+| NBS (9 dígitos) | Código do serviço (Nomenclatura Brasileira de Serviços) | Botão **Localizar**, buscando pela descrição. Para mercadoria usa-se NCM (8 dígitos), que vem na nota do fornecedor |
+| cClassTrib (6 dígitos) | Classificação tributária: tributação integral, redução, isenção etc. | Depois de escolher o NBS, a busca lista só as classificações aceitas para ele, com a redução de cada uma |
+| CST (3 dígitos) | Situação tributária | São os 3 primeiros dígitos do cClassTrib; a tela preenche sozinha |
+| Alíquotas de CBS e IBS | Só a partir de 2027 | Botão **Buscar alíquotas de referência** |
+| Base de cálculo | Valor da operação sem CBS e IBS | Na obra, vem do orçamento |
+
+As buscas usam as tabelas servidas pela própria calculadora (dados abertos), então só funcionam com o serviço instalado.
+Quem define o NBS e a classificação do contrato é a contabilidade: a busca mostra o que a tabela oficial permite, não o
+enquadramento correto da operação.
+
 ## O que ainda não está ligado
 
 - Tela para o Simples Nacional (a ação existe na função; a entrada tem regras próprias por tipo de documento).
-- Uso automático do resultado na aba **Tributos (CBS)** do planejamento da obra, que continua com as alíquotas estimadas do estudo.
 - Geração e validação do XML dos grupos de tributação (`/xml/generate`, `/xml/validate`).
 - Nada disso foi exercitado contra um serviço real: os testes usam o exemplo de resposta da documentação da Receita.

@@ -30,7 +30,7 @@ Atualizado em 04/11/2026. Legenda: **OK** atendido e validado · **Parcial** ate
 | C8 | Neutralidade B2B (CBS destacada vira crédito do comprador) | Parcial | Citada no alerta de caixa; sem cálculo do lado do cliente |
 | C9 | Lucro Presumido: IRPJ/CSLL com presunção de 32% | Parcial | Nota informativa; sem cálculo de IRPJ/CSLL |
 | C10 | Aplicação ao faturamento e aos custos reais da app (Odoo) | Parcial | Aba **Tributos (CBS)** do planejamento da obra: faturamento = orçamento da obra (engenharia × software), notas de compra com CBS destacada e crédito elegível, saldo e transporte, gravado com a obra. **Sem leitura de notas reais do Odoo**: o conector (`odoo-patrimony`) não autoriza `account.move`; liberar exige alterar e publicar a função e conceder acesso a dados financeiros |
-| C11 | Cálculo oficial de CBS, IBS e Imposto Seletivo pela calculadora da Receita (regime geral), base unificada, DANFSe | Parcial | `src/rtc/rtc.ts`, função `calculadora-rtc`, tela **Calculadora oficial (Receita)**; ver `docs/CALCULADORA-RTC.md`. Depende de hospedar os serviços e cadastrar os segredos; não testado contra serviço real. Simples Nacional sem tela |
+| C11 | Cálculo oficial de CBS, IBS e Imposto Seletivo pela calculadora da Receita (regime geral), base unificada, DANFSe | Parcial | `src/rtc/rtc.ts`, função `calculadora-rtc`, tela **Calculadora oficial (Receita)**; ver `docs/CALCULADORA-RTC.md`. Ligado à aba **Tributos (CBS)** da obra (débito oficial quando vigente; crédito pela regra local) e com busca de município, NBS e classificação nas tabelas oficiais. Depende de hospedar os serviços e cadastrar os segredos; não testado contra serviço real. Simples Nacional sem tela |
 
 ## 3. GRAPROHAB / CETESB
 
