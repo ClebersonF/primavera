@@ -56,3 +56,4 @@ export * from "./car/dataFonte";
 export * from "./rtc/rtc";
 export * from "./tax/regimes";
 export * from "./tax/cnpj";
+export { formatBrNumber, parseBrNumber } from "./money";
