@@ -17,7 +17,8 @@ describe("alavancas de economia", () => {
   it("cada cenário muda uma premissa e recalcula; economia é relativa ao melhor atual", () => {
     const l = regimeLevers(caso);
     const ids = l.scenarios.map((s) => s.id);
-    expect(ids).toEqual(["margem_menor", "margem_maior", "so_pf", "com_simples", "regime_pleno"]);
+    expect(ids).toEqual(["margem_menor", "margem_maior", "so_pf", "regime_pleno"]);
+    expect(regimeLevers({ ...caso, revenue: 3_000_000 }).scenarios.some((s) => s.id === "com_simples")).toBe(true);
     const menor = l.scenarios.find((s) => s.id === "margem_menor")!;
     const real = (m: number) => compareRegimes({ ...caso, realProfitMargin: m }).scenarios.find((s) => s.id === "real")!.total;
     expect(real(0.1)).toBeLessThan(real(0.2));

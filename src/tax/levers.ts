@@ -1,6 +1,6 @@
 import { PmoError } from "../errors";
 import { formatBrNumber } from "../money";
-import { compareRegimes, DEFAULT_REGIME_PARAMS, fatorRGap, realBreakEvenMargin, type RegimeComparison, type RegimeId, type RegimeInput, type RegimeParams } from "./regimes";
+import { compareRegimes, DEFAULT_REGIME_PARAMS, SIMPLES_LIMIT, fatorRGap, realBreakEvenMargin, type RegimeComparison, type RegimeId, type RegimeInput, type RegimeParams } from "./regimes";
 
 /**
  * Alavancas de economia: a mesma comparação de regimes refeita com UMA premissa alterada por vez.
@@ -62,7 +62,8 @@ export function regimeLevers(input: RegimeInput, params: RegimeParams = DEFAULT_
   out.push(make("margem_maior", "Lucro tributável 10 pontos maior", `Margem do Lucro Real de ${formatBrNumber(m * 100, 1)}% para ${formatBrNumber((m + 0.1) * 100, 1)}%.`, { ...input, realProfitMargin: Math.min(1, m + 0.1) }));
   if (input.b2bShare > 0) out.push(make("so_pf", "Só clientes sem crédito (pessoa física)", "Nenhum cliente recupera a CBS/IBS: ela vira custo integral.", { ...input, b2bShare: 0 }));
   if (input.b2bShare < 1) out.push(make("so_pj", "Só clientes empresa com crédito", "Todos os clientes recuperam a CBS/IBS destacada.", { ...input, b2bShare: 1 }));
-  if (!input.simplesAvailable) out.push(make("com_simples", "Com o Simples Nacional disponível", "Considera o Simples ao alcance (ex.: após a próxima janela de opção).", { ...input, simplesAvailable: true }));
+  // Acima do limite de receita o Simples continua fora mesmo com a opção feita: o cenário não diria nada.
+  if (!input.simplesAvailable && input.revenue <= SIMPLES_LIMIT) out.push(make("com_simples", "Com o Simples Nacional disponível", "Considera o Simples ao alcance (ex.: após a próxima janela de opção).", { ...input, simplesAvailable: true }));
   if (input.year !== 2033) out.push(make("regime_pleno", "Regime pleno (2033, estimativa)", "Mesmos números no cenário de 2033, com ISS, PIS e COFINS extintos.", { ...input, year: 2033 }));
 
   const disponiveis = base.scenarios.filter((s) => s.available).sort((a, b) => a.total - b.total);
