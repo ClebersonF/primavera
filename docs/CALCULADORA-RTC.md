@@ -49,8 +49,12 @@ Verificado em 20/11/2026, pelo navegador: app 1.7.2, base V0073; responde sem au
 - O navegador não consegue chamá-la direto (a Receita não libera CORS). A chamada sai do servidor do app, pela
   função de servidor `rtcRegimeFn` (`src/features/rtc/rtc.functions.ts`), publicada junto com as telas.
 - Essa função não exige login: o destino é fixo, só as ações da lista são aceitas e não há segredo envolvido.
-- **Não verificado**: se a Receita aceita chamadas vindas do servidor de hospedagem do app (pode haver bloqueio por
-  origem ou país). É um ambiente piloto: a Receita pode mudar ou restringir o acesso sem aviso.
+- **Verificado em produção em 20/11/2026** (`imoveis.cronossuite.store`, servidor em Cloudflare Workers): busca de
+  município, tabela NBS, classificações por NBS e cálculo de ponta a ponta (NBS 101029000, cClassTrib 000001, base de
+  R$ 1.000,00, Nova Odessa/SP → CBS R$ 9,00 e IBS R$ 1,00, `CALCULADO`). O runtime não aceita `fetch` com
+  `redirect: "error"`; a função usa `"manual"`.
+- É um ambiente piloto: a Receita pode mudar ou restringir o acesso sem aviso. A lista de classificações "aplicáveis"
+  a um NBS que ela devolve é ampla; a escolha continua sendo da contabilidade.
 - Simples Nacional e DANFSe não têm instância pública conhecida: continuam exigindo instalação própria e a função de
   borda `calculadora-rtc`.
 
