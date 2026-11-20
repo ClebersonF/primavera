@@ -36,11 +36,23 @@ tela "Calculadora oficial (Receita)"  →  função de borda `calculadora-rtc`  
 | `CALCULADORA_RTC_SIMPLES_URL` | `https://rtc-simples.suaempresa.com.br` |
 | `CALCULADORA_RTC_DANFSE_URL` | `https://danfse.suaempresa.com.br` |
 
-Sem o segredo, a tela avisa "Calculadora ainda não instalada" e nada é calculado.
+Sem o segredo do regime, vale a instância pública da Receita (abaixo). Sem os do Simples e do DANFSe, a tela avisa que o serviço não está instalado.
 
-O portal da Receita mantém uma instância piloto em `https://piloto-cbs.tributos.gov.br/servico/calculadora-consumo`.
-**Não foi testado** se ela aceita chamadas de sistemas externos nem se tem os caminhos de observabilidade usados aqui;
-para produção, hospede os serviços.
+### Instância pública da Receita (padrão para o regime geral)
+
+A Receita mantém a calculadora no ar em `https://piloto-cbs.tributos.gov.br/servico/calculadora-consumo` (ambiente piloto).
+Verificado em 20/11/2026, pelo navegador: app 1.7.2, base V0073; responde sem autenticação às tabelas oficiais
+(municípios, NBS, classificações, alíquotas) e ao cálculo em `/observabilidade/regime-geral`. Exemplo: serviço NBS
+101011100, cClassTrib 000001, base de R$ 1.000,00 em 20/11/2026 → CBS 0,90% (R$ 9,00) e IBS 0,10% (R$ 1,00), `CALCULADO`.
+
+- **É o destino padrão do regime geral**: sem `CALCULADORA_RTC_REGIME_URL`, o app usa essa instância.
+- O navegador não consegue chamá-la direto (a Receita não libera CORS). A chamada sai do servidor do app, pela
+  função de servidor `rtcRegimeFn` (`src/features/rtc/rtc.functions.ts`), publicada junto com as telas.
+- Essa função não exige login: o destino é fixo, só as ações da lista são aceitas e não há segredo envolvido.
+- **Não verificado**: se a Receita aceita chamadas vindas do servidor de hospedagem do app (pode haver bloqueio por
+  origem ou país). É um ambiente piloto: a Receita pode mudar ou restringir o acesso sem aviso.
+- Simples Nacional e DANFSe não têm instância pública conhecida: continuam exigindo instalação própria e a função de
+  borda `calculadora-rtc`.
 
 ## Subir os serviços
 
@@ -106,7 +118,7 @@ Publique os três atrás de HTTPS e restrinja o acesso de rede à função de bo
 | Alíquotas de CBS e IBS | Só a partir de 2027 | Botão **Buscar alíquotas de referência** |
 | Base de cálculo | Valor da operação sem CBS e IBS | Na obra, vem do orçamento |
 
-As buscas usam as tabelas servidas pela própria calculadora (dados abertos), então só funcionam com o serviço instalado.
+As buscas usam as tabelas servidas pela própria calculadora (dados abertos), na instância pública ou na instalação própria.
 Quem define o NBS e a classificação do contrato é a contabilidade: a busca mostra o que a tabela oficial permite, não o
 enquadramento correto da operação.
 

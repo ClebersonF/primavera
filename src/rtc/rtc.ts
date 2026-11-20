@@ -60,12 +60,14 @@ export function validateRtcOperacao(op: RtcOperacaoRegimeGeral): void {
   for (const it of op.itens) {
     if (!Number.isInteger(it.numero) || it.numero < 1 || seen.has(it.numero)) throw new PmoError(`Número de item inválido ou repetido: ${it.numero}.`);
     seen.add(it.numero);
-    if (Boolean(it.ncm) === Boolean(it.nbs)) throw new PmoError(`Item ${it.numero}: informe NCM (bem) ou NBS (serviço), não os dois nem nenhum.`);
-    if (!/^\d{3}$/.test(it.cst)) throw new PmoError(`Item ${it.numero}: CST deve ter 3 dígitos.`);
-    if (!/^\d{6}$/.test(it.cClassTrib)) throw new PmoError(`Item ${it.numero}: cClassTrib deve ter 6 dígitos.`);
+    if (it.ncm && it.nbs) throw new PmoError(`Item ${it.numero}: informe só o NCM (bem) ou só o NBS (serviço), não os dois.`);
+    if (it.ncm === "") throw new PmoError(`Item ${it.numero}: falta o NCM do bem (8 dígitos). Ele vem na nota do fornecedor.`);
+    if (!it.ncm && !it.nbs) throw new PmoError(`Item ${it.numero}: falta o NBS do serviço (9 dígitos). Use “Localizar” para buscar pela descrição.`);
+    if (!/^\d{6}$/.test(it.cClassTrib)) throw new PmoError(`Item ${it.numero}: falta a classificação tributária (cClassTrib, 6 dígitos). Depois de escolher o serviço em “Localizar”, escolha a classificação.`);
+    if (!/^\d{3}$/.test(it.cst)) throw new PmoError(`Item ${it.numero}: CST deve ter 3 dígitos (os 3 primeiros do cClassTrib).`);
     if (it.ncm !== undefined && !(onlyDigits(it.ncm) && it.ncm.length === 8)) throw new PmoError(`Item ${it.numero}: NCM deve ter 8 dígitos.`);
     if (it.nbs !== undefined && !(onlyDigits(it.nbs) && it.nbs.length === 9)) throw new PmoError(`Item ${it.numero}: NBS deve ter 9 dígitos.`);
-    if (it.baseCalculo !== undefined && !(Number.isFinite(it.baseCalculo) && it.baseCalculo >= 0)) throw new PmoError(`Item ${it.numero}: base de cálculo inválida.`);
+    if (it.baseCalculo !== undefined && !(Number.isFinite(it.baseCalculo) && it.baseCalculo >= 0)) throw new PmoError(`Item ${it.numero}: informe a base de cálculo em reais (valor da operação sem CBS e IBS).`);
     const a = it.aliquotasNominais;
     if (a) for (const [k, v] of [["cbs", a.cbs], ["ibsEstadual", a.ibsEstadual], ["ibsMunicipal", a.ibsMunicipal]] as const) {
       if (!Number.isFinite(v) || v < 0 || v > 100) throw new PmoError(`Item ${it.numero}: alíquota ${k} fora de 0 a 100.`);
@@ -207,3 +209,10 @@ export function matchRtcByName<T extends { nome: string }>(items: readonly T[], 
   const iguais = items.filter((i) => fold(i.nome).trim().replace(/\s+/g, " ") === alvo);
   return iguais.length === 1 ? iguais[0]! : null;
 }
+
+/**
+ * Instância pública da calculadora mantida pela Receita Federal (ambiente piloto da Reforma Tributária).
+ * Responde sem autenticação ao cálculo do regime geral e às tabelas oficiais; verificado em 20/11/2026 (app 1.7.2).
+ * Não tem Simples Nacional nem DANFSe conhecidos, e a Receita pode mudar ou restringir o acesso sem aviso.
+ */
+export const RTC_PUBLIC_REGIME_URL = "https://piloto-cbs.tributos.gov.br/servico/calculadora-consumo";

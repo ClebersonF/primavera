@@ -23,8 +23,12 @@ describe("RTC — entrada", () => {
     expect(bad({ uf: "rs" })).toThrow(PmoError);
     expect(bad({ dhFatoGerador: "2027-03-10" })).toThrow(PmoError);
     expect(bad({ itens: [] })).toThrow(PmoError);
-    expect(bad({ itens: [{ ...item, ncm: "10063021" }] })).toThrow(/NCM \(bem\) ou NBS/);
-    expect(bad({ itens: [{ ...item, cClassTrib: "28" }] })).toThrow(/cClassTrib/);
+    expect(bad({ itens: [{ ...item, ncm: "10063021" }] })).toThrow(/não os dois/);
+    expect(bad({ itens: [{ ...item, nbs: "" }] })).toThrow(/falta o NBS do serviço/);
+    expect(bad({ itens: [{ ...item, nbs: undefined, ncm: "" }] })).toThrow(/falta o NCM do bem/);
+    expect(bad({ itens: [{ ...item, cst: "", cClassTrib: "" }] })).toThrow(/falta a classificação/);
+    expect(bad({ itens: [{ ...item, baseCalculo: NaN }] })).toThrow(/base de cálculo em reais/);
+    expect(bad({ itens: [{ ...item, cClassTrib: "28" }] })).toThrow(/classificação tributária/);
     expect(bad({ itens: [item, item] })).toThrow(/repetido/);
     expect(bad({ itens: [{ ...item, aliquotasNominais: { ...aliq, cbs: 880 } }] })).toThrow(/alíquota cbs/);
   });
