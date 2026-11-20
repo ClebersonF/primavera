@@ -1,3 +1,4 @@
+import { validateDeliveryCommitment, type DeliveryCommitment } from "../delivery/delivery";
 import { ALLOCATION_CURVES, type AllocationCurve } from "../resources/profile";
 import { normalizeProgramPath } from "../portfolio/programs";
 import { MAX_CONTRACTS, MAX_PAYMENTS, cleanContract, cleanContractDeltas, cleanPayment, summarizeContracts, validatePayment, type Contract, type ContractSummary, type Payment } from "../contracts/contracts";
@@ -270,6 +271,8 @@ export interface WorkPlanning {
   kind?: ProjectKind;
   /** Estudo de viabilidade do empreendimento (premissas como digitadas); ausente = não elaborado. */
   feasibility?: FeasibilityDraft;
+  /** Compromisso de entrega das obras ao comprador (data e tolerância); ausente = não informado. */
+  delivery?: DeliveryCommitment;
   /** Programa ou carteira a que o projeto pertence (nível acima do projeto); ausente = sem programa. */
   program?: string;
 }
@@ -917,6 +920,15 @@ export function normalizePlanning(raw: unknown): WorkPlanning {
   if ((PROJECT_KINDS as readonly string[]).includes(raw.kind as string)) result.kind = raw.kind as ProjectKind;
   const feasibility = cleanFeasibilityDraft(raw.feasibility);
   if (feasibility) result.feasibility = feasibility;
+  if (isObj(raw.delivery) && typeof raw.delivery.date === "string" && typeof raw.delivery.toleranceDays === "number") {
+    const d: DeliveryCommitment = { date: raw.delivery.date, toleranceDays: raw.delivery.toleranceDays, ...(typeof raw.delivery.activityId === "string" ? { activityId: raw.delivery.activityId } : {}) };
+    try {
+      validateDeliveryCommitment(d);
+      result.delivery = d;
+    } catch {
+      /* descarta compromisso inválido */
+    }
+  }
   if (Number.isInteger(raw.primaryBaseline) && (raw.primaryBaseline as number) >= 0 && (raw.primaryBaseline as number) < baselines.length) {
     result.primaryBaseline = raw.primaryBaseline as number;
   }
@@ -1433,6 +1445,15 @@ function cleanFeasibilityDraft(v: unknown): FeasibilityDraft | null {
   return { ...(out as Omit<FeasibilityDraft, "direct">), direct };
 }
 
+/** Define (ou remove, com `undefined`) o compromisso de entrega das obras e a tolerância contratual. */
+export function withDeliveryCommitment(p: WorkPlanning, c: DeliveryCommitment | undefined): WorkPlanning {
+  if (c !== undefined) validateDeliveryCommitment(c);
+  const next = c === undefined ? undefined : { date: c.date, toleranceDays: c.toleranceDays, ...(c.activityId ? { activityId: c.activityId } : {}) };
+  if (sameJson(next, p.delivery)) return p;
+  const { delivery: _old, ...rest } = p;
+  return bump(next ? ({ ...rest, delivery: next } as WorkPlanning) : (rest as WorkPlanning), {});
+}
+
 /** Grava (ou remove, com `undefined`) o estudo de viabilidade do empreendimento. */
 export function withFeasibility(p: WorkPlanning, draft: FeasibilityDraft | undefined): WorkPlanning {
   const clean = draft === undefined ? undefined : cleanFeasibilityDraft(draft);
@@ -1610,6 +1631,7 @@ export function describePlanningChange(prev: WorkPlanning, next: WorkPlanning): 
     else if (!sameJson(old, q)) out.push(`Questão ${q.id} atualizada${old.status !== q.status ? ` (${old.status} → ${q.status})` : ""}`);
   }
   for (const q of prev.issues) if (!next.issues.some((x) => x.id === q.id)) out.push(`Questão ${q.id} removida`);
+  if (!sameJson(prev.delivery, next.delivery)) out.push(next.delivery ? `Compromisso de entrega: ${next.delivery.date} (+${next.delivery.toleranceDays} dias de tolerância)${next.delivery.activityId ? " ligado a uma atividade" : ""}` : "Compromisso de entrega removido");
   if (!sameJson(prev.feasibility, next.feasibility)) out.push(next.feasibility ? "Estudo de viabilidade atualizado" : "Estudo de viabilidade removido");
   if (prev.kind !== next.kind) out.push(next.kind ? `Tipo de empreendimento: ${PROJECT_KIND_LABEL[next.kind]}` : "Tipo de empreendimento removido");
   if (prev.program !== next.program) out.push(next.program ? `Programa: ${next.program}` : "Programa removido");

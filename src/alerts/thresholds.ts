@@ -42,10 +42,12 @@ export interface ThresholdMetrics {
   overCommittedContracts?: number;
   /** Empreendimento que exige GRAPROHAB/CETESB (loteamento ou condomínio) sem nenhum processo iniciado. */
   licensingPending?: boolean;
+  /** Situação do término projetado frente ao compromisso de entrega: dentro da tolerância ou estourada. */
+  deliveryRisk?: "em_tolerancia" | "estourado";
 }
 
 export type AlertSeverity = "atencao" | "critico";
-export type AlertCode = "spi" | "cpi" | "prazo" | "riscos" | "questoes" | "restricoes" | "contratos" | "licenciamento";
+export type AlertCode = "spi" | "cpi" | "prazo" | "riscos" | "questoes" | "restricoes" | "contratos" | "licenciamento" | "entrega";
 
 export interface ThresholdAlert {
   code: AlertCode;
@@ -77,6 +79,8 @@ export function evaluateThresholds(m: ThresholdMetrics, rules: ThresholdRules = 
   if ((m.deadlineViolations ?? 0) > 0) out.push({ code: "restricoes", severity: "critico", message: `${m.deadlineViolations} atividade(s) com “terminar até” violado` });
   if ((m.overCommittedContracts ?? 0) > 0) out.push({ code: "contratos", severity: "critico", message: `${m.overCommittedContracts} contrato(s) com pagamentos acima do valor vigente` });
   if (m.licensingPending) out.push({ code: "licenciamento", severity: "atencao", message: "Licenciamento (GRAPROHAB/CETESB) ainda não iniciado" });
+  if (m.deliveryRisk === "estourado") out.push({ code: "entrega", severity: "critico", message: "Término projetado passa da tolerância contratual de entrega" });
+  else if (m.deliveryRisk === "em_tolerancia") out.push({ code: "entrega", severity: "atencao", message: "Término projetado passa da data de entrega, dentro da tolerância contratual" });
   return out.sort((a, b) => Number(b.severity === "critico") - Number(a.severity === "critico"));
 }
 

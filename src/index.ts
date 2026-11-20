@@ -49,3 +49,5 @@ export * from "./resources/profile";
 
 export * from "./import/activities";
 export * from "./feasibility/feasibility";
+export * from "./licensing/condoLotes";
+export * from "./delivery/delivery";
