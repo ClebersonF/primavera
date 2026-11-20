@@ -53,3 +53,4 @@ export * from "./licensing/condoLotes";
 export * from "./delivery/delivery";
 export * from "./car/car";
 export * from "./car/dataFonte";
+export * from "./rtc/rtc";
