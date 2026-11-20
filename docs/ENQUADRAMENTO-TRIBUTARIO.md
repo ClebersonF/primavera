@@ -34,3 +34,30 @@ testes em `tests/regimes.test.ts`, com valores conferidos à mão.
   Supõe que o cliente aceita pagar o imposto que recupera, mantendo o mesmo preço líquido.
 - A retenção de 10% sobre lucros distribuídos acima de R$ 50 mil por mês por sócio (desde 2026) não entra na conta.
 - De 2029 a 2032 (ISS caindo 10% ao ano, IBS subindo) não há cenário próprio.
+
+## Menu Tributos (consolidado)
+
+Desde 20/11/2026 as telas de tributos ficam em um só menu, **Gestão de Projetos → Tributos** (`/pmo/tributos`), com abas:
+
+| Aba | O que faz | Antes |
+|---|---|---|
+| Enquadramento | CNPJ e comparação Simples × Presumido × Real | `/pmo/enquadramento` (redireciona) |
+| Análise por IA | Alavancas de economia calculadas pelo app e leitura por IA | nova |
+| Calculadora oficial | Cálculo de CBS/IBS/IS e DANFSe pela calculadora da Receita | `/pmo/rtc` (redireciona) |
+| Contrato e CBS | Rateio do contrato em notas e apuração mensal com créditos | `/pmo/tributos` |
+
+As abas compartilham a empresa consultada e os números digitados (só no navegador: `pmo.tributos.v1`). A aba de
+tributos dentro de cada obra continua no planejamento da obra, porque é ligada ao orçamento dela.
+
+## Análise por IA
+
+- **Alavancas** (`regimeLevers`, `src/tax/levers.ts`): a comparação refeita mudando uma premissa por vez — Fator R em 28%,
+  margem de lucro ±10 pontos, só clientes pessoa física ou só empresas, Simples disponível, regime pleno de 2033. Cálculo
+  determinístico, testado.
+- **Leitura por IA** (`/api/tributos-ia`): mesmo gateway e chave da Kora (`LOVABLE_API_KEY`; modelo em
+  `TRIBUTOS_IA_MODEL`, padrão `google/gemini-3-flash-preview`). A IA recebe só os números calculados, prazos e incertezas
+  conhecidos, e devolve JSON com resumo, indicação, economias, riscos, perguntas para o contador e próximos passos.
+- **Conferência** (`unverifiedAmounts`): todo valor em reais citado pela IA é comparado com os números do cálculo (e com
+  somas e diferenças de dois deles). O que não bate aparece em destaque como "valores que não vêm do cálculo".
+- A análise fica presa aos números que a geraram: se o usuário muda uma premissa, a tela avisa que está desatualizada.
+- A rota não exige login, como a da Kora: qualquer pessoa com o endereço do app pode consumir créditos de IA.
