@@ -162,6 +162,8 @@ export const RTC_ACTIONS = {
   "nbs-lista": { service: "regime", method: "GET", path: "/api/calculadora/dados-abertos/nbs/lista" },
   "classificacoes-lista": { service: "regime", method: "GET", path: "/api/calculadora/dados-abertos/classificacoes-tributarias/cbs-ibs" },
   "classificacoes-por-nbs": { service: "regime", method: "GET", path: "/api/calculadora/dados-abertos/classificacoes-tributarias/nbs" },
+  "ncm-vigentes": { service: "regime", method: "GET", path: "/api/calculadora/dados-abertos/ncm/vigentes" },
+  "ncm-aplicavel": { service: "regime", method: "GET", path: "/api/calculadora/dados-abertos/classificacoes-tributarias/ncm-aplicavel" },
   "danfse": { service: "danfse", method: "POST", path: "/api/danfse" },
 } as const satisfies Record<string, { service: RtcService; method: "GET" | "POST"; path: string }>;
 export type RtcAction = keyof typeof RTC_ACTIONS;
@@ -216,3 +218,26 @@ export function matchRtcByName<T extends { nome: string }>(items: readonly T[], 
  * Não tem Simples Nacional nem DANFSe conhecidos, e a Receita pode mudar ou restringir o acesso sem aviso.
  */
 export const RTC_PUBLIC_REGIME_URL = "https://piloto-cbs.tributos.gov.br/servico/calculadora-consumo";
+
+/** As tabelas oficiais trazem marcação (ex.: <i>clinkers</i>); para a tela, fica só o texto. */
+export const rtcPlainText = (v: string): string => v.replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
+
+/**
+ * Busca de NCM. A tabela oficial traz só o rótulo do último nível ("-- Outros"), então a busca por código é a mais
+ * confiável: um termo só de dígitos casa com o INÍCIO do código (capítulo, posição ou código inteiro). Palavras casam
+ * com a descrição. Os traços de hierarquia do rótulo são removidos.
+ */
+export function searchNcm(items: readonly { ncm: string; descricao?: string }[], term: string, limit = 30): { codigo: string; descricao: string }[] {
+  const t = term.trim();
+  const digitos = t.replace(/[.\s]/g, "");
+  const porCodigo = /^\d+$/.test(digitos);
+  const words = fold(t).split(/\s+/).filter(Boolean);
+  const out: { codigo: string; descricao: string }[] = [];
+  for (const it of items) {
+    const descricao = rtcPlainText(it.descricao ?? "").replace(/^[-\s]+/, "");
+    const ok = t === "" || (porCodigo ? it.ncm.startsWith(digitos) : words.every((w) => fold(descricao).includes(w)));
+    if (ok) out.push({ codigo: it.ncm, descricao });
+    if (out.length >= limit) break;
+  }
+  return out;
+}

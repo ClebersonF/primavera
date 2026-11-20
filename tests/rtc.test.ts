@@ -143,3 +143,19 @@ describe("RTC — município pelo nome", () => {
     expect(new Set(UFS_BR).size).toBe(27);
   });
 });
+
+import { searchNcm } from "../src";
+describe("RTC — busca de NCM", () => {
+  const ncm = [{ ncm: "25231000", descricao: "- Cimentos não pulverizados, denominados clinkers" }, { ncm: "25232910", descricao: "--- Cimento comum" }, { ncm: "25232990", descricao: "--- Outros" }, { ncm: "72142000", descricao: "- Dentadas, com nervuras" }];
+  it("dígitos casam com o início do código, com ou sem pontos", () => {
+    expect(searchNcm(ncm, "2523").map((i) => i.codigo)).toEqual(["25231000", "25232910", "25232990"]);
+    expect(searchNcm(ncm, "2523.29")).toHaveLength(2);
+    expect(searchNcm(ncm, "232")).toEqual([]);
+  });
+  it("palavras casam com a descrição, sem acento, e o rótulo perde os traços", () => {
+    expect(searchNcm(ncm, "cimento comum")).toEqual([{ codigo: "25232910", descricao: "Cimento comum" }]);
+    expect(searchNcm(ncm, "NERVURAS")[0]?.codigo).toBe("72142000");
+    expect(searchNcm(ncm, "", 2)).toHaveLength(2);
+    expect(searchNcm([{ ncm: "25231000", descricao: "- Cimentos <i>clinkers</i>" }], "clinkers")[0]?.descricao).toBe("Cimentos clinkers");
+  });
+});
