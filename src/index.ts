@@ -57,3 +57,4 @@ export * from "./rtc/rtc";
 export * from "./tax/regimes";
 export * from "./tax/cnpj";
 export { formatBrNumber, parseBrNumber } from "./money";
+export * from "./tax/levers";
