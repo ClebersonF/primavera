@@ -124,3 +124,18 @@ describe("RTC — localizar códigos", () => {
     expect(searchRtcCatalog(itens, "inexistente")).toEqual([]);
   });
 });
+
+import { UFS_BR, matchRtcByName } from "../src";
+describe("RTC — município pelo nome", () => {
+  const sp = [{ codigo: 3538709, nome: "Piracicaba" }, { codigo: 3550308, nome: "São Paulo" }, { codigo: 3549904, nome: "São José dos Campos" }];
+  it("resolve o nome exato sem acento nem caixa; parcial ou vazio não resolve", () => {
+    expect(matchRtcByName(sp, "  sao  paulo ")?.codigo).toBe(3550308);
+    expect(matchRtcByName(sp, "PIRACICABA")?.codigo).toBe(3538709);
+    expect(matchRtcByName(sp, "São")).toBeNull();
+    expect(matchRtcByName(sp, "")).toBeNull();
+    expect(matchRtcByName([...sp, { codigo: 1, nome: "Piracicaba" }], "Piracicaba")).toBeNull();
+  });
+  it("lista as 27 UFs sem repetição", () => {
+    expect(new Set(UFS_BR).size).toBe(27);
+  });
+});

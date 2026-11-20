@@ -99,7 +99,7 @@ Publique os três atrás de HTTPS e restrinja o acesso de rede à função de bo
 | Campo | O que é | Onde achar |
 |---|---|---|
 | Data do fato gerador | Dia da prestação do serviço ou da emissão da nota | Contrato ou medição; define alíquotas e regras vigentes |
-| Município (IBGE, 7 dígitos) e UF | Local da operação | Botão **Localizar município**; site do IBGE; campo `cMun` das notas |
+| UF e município | Local da operação | Escolha a UF e digite o nome; o código IBGE exigido pela calculadora é preenchido sozinho (lista da calculadora ou, se ela não responder, do IBGE) |
 | NBS (9 dígitos) | Código do serviço (Nomenclatura Brasileira de Serviços) | Botão **Localizar**, buscando pela descrição. Para mercadoria usa-se NCM (8 dígitos), que vem na nota do fornecedor |
 | cClassTrib (6 dígitos) | Classificação tributária: tributação integral, redução, isenção etc. | Depois de escolher o NBS, a busca lista só as classificações aceitas para ele, com a redução de cada uma |
 | CST (3 dígitos) | Situação tributária | São os 3 primeiros dígitos do cClassTrib; a tela preenche sozinha |

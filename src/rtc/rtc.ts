@@ -53,7 +53,7 @@ const onlyDigits = (s: string) => /^\d+$/.test(s);
 export function validateRtcOperacao(op: RtcOperacaoRegimeGeral): void {
   if (!op.id.trim()) throw new PmoError("Operação sem identificador.");
   if (Number.isNaN(Date.parse(op.dhFatoGerador)) || !/T\d{2}:\d{2}/.test(op.dhFatoGerador)) throw new PmoError("Data do fato gerador inválida: use o formato AAAA-MM-DDThh:mm:ss-03:00.");
-  if (!Number.isInteger(op.municipio) || String(op.municipio).length !== 7) throw new PmoError("Município deve ser o código IBGE de 7 dígitos.");
+  if (!Number.isInteger(op.municipio) || String(op.municipio).length !== 7) throw new PmoError("Município não informado: escolha a UF e o município da lista.");
   if (!/^[A-Z]{2}$/.test(op.uf)) throw new PmoError("UF inválida.");
   if (op.itens.length === 0) throw new PmoError("Informe ao menos um item.");
   const seen = new Set<number>();
@@ -195,4 +195,15 @@ export function searchRtcCatalog<T extends { codigo: string | number; descricao?
     if (out.length >= limit) break;
   }
   return out;
+}
+
+/** Siglas das 27 unidades da federação, em ordem alfabética. */
+export const UFS_BR = ["AC", "AL", "AM", "AP", "BA", "CE", "DF", "ES", "GO", "MA", "MG", "MS", "MT", "PA", "PB", "PE", "PI", "PR", "RJ", "RN", "RO", "RR", "RS", "SC", "SE", "SP", "TO"] as const;
+
+/** Item cujo nome é exatamente o digitado (sem acento, caixa nem espaços sobrando). Nome parcial ou ambíguo → null. */
+export function matchRtcByName<T extends { nome: string }>(items: readonly T[], typed: string): T | null {
+  const alvo = fold(typed).trim().replace(/\s+/g, " ");
+  if (alvo === "") return null;
+  const iguais = items.filter((i) => fold(i.nome).trim().replace(/\s+/g, " ") === alvo);
+  return iguais.length === 1 ? iguais[0]! : null;
 }
