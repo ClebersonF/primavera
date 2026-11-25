@@ -38,6 +38,17 @@ As fotos do diário vão para o repositório de arquivos (bucket privado, ação
 
 CPF/CNPJ dos compradores ficam no planejamento da obra e aparecem mascarados nas telas. A reserva expira pelo relógio, na leitura; não há tarefa agendada. O relatório executivo abre numa página própria e sai em PDF pela impressão do navegador.
 
+## Onda 1 do plano de gaps
+
+| Arquivo | O que faz | Regra |
+| --- | --- | --- |
+| `os.ts` + `campo.ts` | OS por frente e trecho; vínculo da frente com a atividade do cronograma | Frente de terceiro só começa com OS: fornecedor homologado para a frente, integração SST registrada, contrato assinado até hoje e ART de execução. Atraso da atividade ligada vira alerta no canteiro |
+| `reforecast.ts` | `importEtapasCsv` | Colunas etapa; orcado; atividades (separadas por `|`, por id ou nome) |
+| `campo.ts` + `planning.ts` | `diasDeChuvaPendentes`, `withDiaDeChuva` | Dia útil com chuva forte ou pluviometria acima do limite fica pendente; aceito vira feriado da obra e o CPM recalcula |
+| `comercial.ts` | `vgvReferencia` | Com tabela publicada, VGV = vendas assinadas + demais lotes pela tabela; sem tabela, o VGV de referência |
+| `fechamento.ts` | Fechamento quinzenal | Fecha a quinzena até D+3 sem boletins no campo ou em conferência; depois disso diários e boletins do período não mudam (o financeiro do boletim continua); fechamento não se desfaz |
+| `plantio.ts` | Plantio compensatório | TCRA com mudas exigidas; vistoria mensal cobrada a partir do dia 10; pega abaixo da meta (85%) pede replantio; 24 meses de manutenção |
+
 ## Formato do CSV
 
 Lotes: `quadra;lote;area_m2;matricula;trecho;fisico;comercial`. Trechos: `id;rua;trecho;largura_pista_m;passeio_m;pavimento_m2`. Aceita ponto e vírgula ou vírgula, campos entre aspas e números no padrão brasileiro ("1.400,50"). Cabeçalhos com unidade ("Área (m²)") são reconhecidos. A importação substitui a lista atual; linhas com erro são listadas e ignoradas.
