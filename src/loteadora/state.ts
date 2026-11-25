@@ -11,6 +11,7 @@ import { cleanComercial, type Comercial } from "./comercial";
 import { cleanFechamento, MAX_FECHAMENTOS, periodoBloqueadoAte, violacaoFechamento, type Fechamento } from "./fechamento";
 import { cleanPlantio, MAX_PLANTIOS, type Plantio } from "./plantio";
 import type { DecisaoChuva } from "./campo";
+import { cleanAviso, MAX_AVISOS, type AvisoEnviado } from "./avisos";
 import { cleanRegistro, eventosDeAlcada, MAX_TRILHA, registrar, trilhaSoInclusao, type Autor, type Carimbo, type RegistroTrilha } from "./trilha";
 import { cleanCotacao, cleanFornecedor, cleanPrancha, MAX_COTACOES, MAX_FORNECEDORES, MAX_PRANCHAS, type Cotacao, type Fornecedor, type Prancha } from "./suprimentos";
 
@@ -53,9 +54,12 @@ export interface LoteadoraState {
   plantios: Plantio[];
   /* Onda 2 — trilha de auditoria encadeada (só inclusão). */
   trilha: RegistroTrilha[];
+  /* Onda 4 — o que a rotina automática já enviou (para não repetir) e o último relatório semanal. */
+  avisos: AvisoEnviado[];
+  ultimoRelatorio?: string;
 }
 
-export const EMPTY_LOTEADORA: LoteadoraState = Object.freeze({ ficha: {}, trechos: [], lotes: [], processos: [], equipe: [], solicitacoes: [], etapas: [], reforecasts: [], frentes: [], diarios: [], rncs: [], boletins: [], fornecedores: [], cotacoes: [], pranchas: [], comercial: { reservas: [], propostas: [], vendas: [] }, fechamentos: [], chuvaDecisoes: {}, plantios: [], trilha: [] }) as LoteadoraState;
+export const EMPTY_LOTEADORA: LoteadoraState = Object.freeze({ ficha: {}, trechos: [], lotes: [], processos: [], equipe: [], solicitacoes: [], etapas: [], reforecasts: [], frentes: [], diarios: [], rncs: [], boletins: [], fornecedores: [], cotacoes: [], pranchas: [], comercial: { reservas: [], propostas: [], vendas: [] }, fechamentos: [], chuvaDecisoes: {}, plantios: [], trilha: [], avisos: [] }) as LoteadoraState;
 
 function uniqueBy<T extends { id: string }>(list: T[], max: number): T[] {
   return uniqueKey(list, (x) => x.id, max);
@@ -99,6 +103,7 @@ export function cleanLoteadora(v: unknown): LoteadoraState | null {
     chuvaDecisoes: {},
     plantios: uniqueBy(arr(v.plantios).flatMap((t) => cleanPlantio(t) ?? []), MAX_PLANTIOS),
     trilha: arr(v.trilha).flatMap((t) => cleanRegistro(t) ?? []).slice(0, MAX_TRILHA),
+    avisos: arr(v.avisos).flatMap((t) => cleanAviso(t) ?? []).slice(-MAX_AVISOS),
     pranchas: uniqueKey(arr(v.pranchas).flatMap((t) => cleanPrancha(t) ?? []), (p) => p.codigo, MAX_PRANCHAS),
   };
   // Frentes: uma por trecho e frente.
@@ -109,6 +114,7 @@ export function cleanLoteadora(v: unknown): LoteadoraState | null {
   for (const d of s.diarios) for (const f of d.fotos) if (f.miniatura) mini++;
   if (mini > MAX_MINIATURAS_OBRA) return null;
   if (isIsoDate(v.inicioDiario)) s.inicioDiario = v.inicioDiario;
+  if (isIsoDate(v.ultimoRelatorio)) s.ultimoRelatorio = v.ultimoRelatorio;
   if (isObj(v.chuvaDecisoes)) for (const [d, x] of Object.entries(v.chuvaDecisoes)) if (isIsoDate(d) && (x === "aceito" || x === "recusado")) s.chuvaDecisoes[d] = x;
   if (nonNeg(v.limiteChuvaMm) && v.limiteChuvaMm > 0 && v.limiteChuvaMm <= 500) s.limiteChuvaMm = v.limiteChuvaMm;
   if (nonNeg(v.retencaoPct) && v.retencaoPct <= 30) s.retencaoPct = v.retencaoPct;

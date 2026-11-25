@@ -17,3 +17,5 @@ export * from "./plantio";
 export * from "./sha256";
 export * from "./governanca";
 export * from "./trilha";
+export * from "./avisos";
+export * from "./relatorio";

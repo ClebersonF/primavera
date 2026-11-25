@@ -25,6 +25,8 @@ export interface Membro {
   id: string;
   nome: string;
   email?: string;
+  /** Celular com DDI e DDD, só dígitos (para avisos por WhatsApp). */
+  telefone?: string;
   papel: Papel;
 }
 
@@ -203,6 +205,10 @@ export function cleanMembro(v: unknown): Membro | null {
   if (!id || !nome || !(PAPEIS as readonly string[]).includes(v.papel as string)) return null;
   const m: Membro = { id, nome, papel: v.papel as Papel };
   if (typeof v.email === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.email) && v.email.length <= 120) m.email = v.email;
+  if (typeof v.telefone === "string") {
+    const t = v.telefone.replace(/\D/g, "");
+    if (t.length >= 12 && t.length <= 15) m.telefone = t;
+  }
   return m;
 }
 
