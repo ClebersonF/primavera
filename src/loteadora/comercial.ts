@@ -209,7 +209,7 @@ export interface Venda {
   /** Assinatura do compromisso de compra e venda. */
   assinadoEm: string;
   distratoEm?: string;
-  entrega?: { em: string; recebidoPor: string; termoAssinado: boolean; assinatura?: string };
+  entrega?: { em: string; recebidoPor: string; termoAssinado: boolean; assinatura?: string; termoHash?: string };
 }
 
 export const MAX_VENDAS = 5000;
@@ -227,7 +227,8 @@ export function cleanVenda(v: unknown): Venda | null {
   if (isIsoDate(v.distratoEm)) venda.distratoEm = v.distratoEm;
   if (isObj(v.entrega) && isIsoDate(v.entrega.em) && text(v.entrega.recebidoPor, 160) && typeof v.entrega.termoAssinado === "boolean") {
     const ass = typeof v.entrega.assinatura === "string" && v.entrega.assinatura.startsWith("data:image/") && v.entrega.assinatura.length <= 30_000 ? v.entrega.assinatura : undefined;
-    venda.entrega = { em: v.entrega.em, recebidoPor: text(v.entrega.recebidoPor, 160)!, termoAssinado: v.entrega.termoAssinado, ...(ass ? { assinatura: ass } : {}) };
+    const th = typeof v.entrega.termoHash === "string" && /^[0-9a-f]{64}$/.test(v.entrega.termoHash) ? v.entrega.termoHash : undefined;
+    venda.entrega = { em: v.entrega.em, recebidoPor: text(v.entrega.recebidoPor, 160)!, termoAssinado: v.entrega.termoAssinado, ...(ass ? { assinatura: ass } : {}), ...(th ? { termoHash: th } : {}) };
   }
   return venda;
 }
@@ -377,7 +378,7 @@ export function baixarParcela(c: Comercial, vendaId: string, indice: number, em:
 }
 
 /** Entrega com termo de vistoria assinado: exige entrada paga e infraestrutura do lote concluída. */
-export function entregarLote(c: Comercial, vendaId: string, lote: Lote, e: { em: string; recebidoPor: string; termoAssinado: boolean; assinatura?: string }): Comercial {
+export function entregarLote(c: Comercial, vendaId: string, lote: Lote, e: { em: string; recebidoPor: string; termoAssinado: boolean; assinatura?: string; termoHash?: string }): Comercial {
   const v = c.vendas.find((x) => x.id === vendaId);
   if (!v || !vendaAtiva(v)) throw new PmoError("Venda inexistente ou distratada.");
   if (v.entrega) throw new PmoError("Lote já entregue.");
@@ -385,7 +386,7 @@ export function entregarLote(c: Comercial, vendaId: string, lote: Lote, e: { em:
   if (lote.fisico !== "infra_concluida" && lote.fisico !== "entregue") throw new PmoError("Infraestrutura do lote ainda não concluída.");
   if (!e.termoAssinado) throw new PmoError("O termo de vistoria precisa estar assinado.");
   if (!isIsoDate(e.em) || !e.recebidoPor.trim()) throw new PmoError("Informe a data e quem recebeu.");
-  return { ...c, vendas: c.vendas.map((x) => (x.id === vendaId ? { ...x, entrega: { em: e.em, recebidoPor: e.recebidoPor.trim().slice(0, 160), termoAssinado: true, ...(e.assinatura ? { assinatura: e.assinatura } : {}) } } : x)) };
+  return { ...c, vendas: c.vendas.map((x) => (x.id === vendaId ? { ...x, entrega: { em: e.em, recebidoPor: e.recebidoPor.trim().slice(0, 160), termoAssinado: true, ...(e.assinatura ? { assinatura: e.assinatura } : {}), ...(e.termoHash ? { termoHash: e.termoHash } : {}) } } : x)) };
 }
 
 /* ---------------------------------- Indicadores ---------------------------------- */
@@ -505,4 +506,15 @@ export function vgvReferencia(lotes: readonly Lote[], c: Comercial, vgvManual?: 
     return { valor: r2(valor), fonte: "vendas" };
   }
   return vgvManual && vgvManual > 0 ? { valor: vgvManual, fonte: "referencia" } : { valor: undefined, fonte: "nenhum" };
+}
+
+/** Texto do termo de vistoria e entrega: o hash dele fica gravado com a assinatura (6.7). */
+export function textoTermoEntrega(v: Venda, lote: Lote, em: string, recebidoPor: string): string {
+  return [
+    "TERMO DE VISTORIA E ENTREGA DE LOTE",
+    `Contrato ${v.id} · Lote ${lote.id} (quadra ${lote.quadra}, nº ${lote.numero}, ${lote.areaM2} m², matrícula ${lote.matricula ?? "—"})`,
+    `Comprador: ${v.comprador.nome} (doc. ${v.comprador.doc})`,
+    `Recebido por: ${recebidoPor} em ${em}`,
+    "O comprador declara ter vistoriado o lote, com infraestrutura concluída, e recebê-lo nas condições do compromisso de compra e venda.",
+  ].join("\n");
 }

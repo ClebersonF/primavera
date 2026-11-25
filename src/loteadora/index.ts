@@ -14,3 +14,6 @@ export * from "./painel";
 export * from "./os";
 export * from "./fechamento";
 export * from "./plantio";
+export * from "./sha256";
+export * from "./governanca";
+export * from "./trilha";

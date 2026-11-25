@@ -11,6 +11,7 @@ import { cleanComercial, type Comercial } from "./comercial";
 import { cleanFechamento, MAX_FECHAMENTOS, periodoBloqueadoAte, violacaoFechamento, type Fechamento } from "./fechamento";
 import { cleanPlantio, MAX_PLANTIOS, type Plantio } from "./plantio";
 import type { DecisaoChuva } from "./campo";
+import { cleanRegistro, eventosDeAlcada, MAX_TRILHA, registrar, trilhaSoInclusao, type Autor, type Carimbo, type RegistroTrilha } from "./trilha";
 import { cleanCotacao, cleanFornecedor, cleanPrancha, MAX_COTACOES, MAX_FORNECEDORES, MAX_PRANCHAS, type Cotacao, type Fornecedor, type Prancha } from "./suprimentos";
 
 /** Tudo o que a Loteadora 360º guarda por obra, dentro do planejamento da obra. */
@@ -50,9 +51,11 @@ export interface LoteadoraState {
   /** Dia de chuva → aceito (virou dia não útil no calendário da obra) ou recusado. */
   chuvaDecisoes: Record<string, DecisaoChuva>;
   plantios: Plantio[];
+  /* Onda 2 — trilha de auditoria encadeada (só inclusão). */
+  trilha: RegistroTrilha[];
 }
 
-export const EMPTY_LOTEADORA: LoteadoraState = Object.freeze({ ficha: {}, trechos: [], lotes: [], processos: [], equipe: [], solicitacoes: [], etapas: [], reforecasts: [], frentes: [], diarios: [], rncs: [], boletins: [], fornecedores: [], cotacoes: [], pranchas: [], comercial: { reservas: [], propostas: [], vendas: [] }, fechamentos: [], chuvaDecisoes: {}, plantios: [] }) as LoteadoraState;
+export const EMPTY_LOTEADORA: LoteadoraState = Object.freeze({ ficha: {}, trechos: [], lotes: [], processos: [], equipe: [], solicitacoes: [], etapas: [], reforecasts: [], frentes: [], diarios: [], rncs: [], boletins: [], fornecedores: [], cotacoes: [], pranchas: [], comercial: { reservas: [], propostas: [], vendas: [] }, fechamentos: [], chuvaDecisoes: {}, plantios: [], trilha: [] }) as LoteadoraState;
 
 function uniqueBy<T extends { id: string }>(list: T[], max: number): T[] {
   return uniqueKey(list, (x) => x.id, max);
@@ -95,6 +98,7 @@ export function cleanLoteadora(v: unknown): LoteadoraState | null {
     fechamentos: uniqueKey(arr(v.fechamentos).flatMap((t) => cleanFechamento(t) ?? []), (f) => f.quinzena, MAX_FECHAMENTOS).sort((a, b) => a.quinzena.localeCompare(b.quinzena)),
     chuvaDecisoes: {},
     plantios: uniqueBy(arr(v.plantios).flatMap((t) => cleanPlantio(t) ?? []), MAX_PLANTIOS),
+    trilha: arr(v.trilha).flatMap((t) => cleanRegistro(t) ?? []).slice(0, MAX_TRILHA),
     pranchas: uniqueKey(arr(v.pranchas).flatMap((t) => cleanPrancha(t) ?? []), (p) => p.codigo, MAX_PRANCHAS),
   };
   // Frentes: uma por trecho e frente.
@@ -129,12 +133,25 @@ export function cleanLoteadora(v: unknown): LoteadoraState | null {
  * Aplica uma mudança ao estado e valida o resultado inteiro (nada inválido é gravado em silêncio):
  * se a limpeza descartar algum item, a mudança é recusada.
  */
-export function updateLoteadora(atual: LoteadoraState | undefined, muda: (s: LoteadoraState) => LoteadoraState): LoteadoraState {
+export function updateLoteadora(atual: LoteadoraState | undefined, muda: (s: LoteadoraState) => LoteadoraState, autor?: Autor, agoraIso?: string, carimbo?: Carimbo): LoteadoraState {
   const base = cleanLoteadora(atual) ?? EMPTY_LOTEADORA;
-  const next = muda(base);
+  const mudado = muda(base);
+  // A trilha só cresce: nada do que já foi registrado pode mudar ou sumir.
+  if (!trilhaSoInclusao(base.trilha, mudado.trilha ?? [])) throw new PmoError("A trilha de auditoria é só de inclusão: registros anteriores não podem mudar.");
+  // Toda gravação com autor ganha registro: decisões de alçada com justificativa e impacto; o resto, o resumo da mudança.
+  let next = mudado;
+  if (autor) {
+    const em = agoraIso ?? new Date().toISOString();
+    let t = mudado.trilha ?? [];
+    const alcadas = eventosDeAlcada(base.solicitacoes, mudado.solicitacoes ?? []);
+    for (const ev of alcadas) t = registrar(t, autor, em, { ...ev, ...(carimbo ? { carimbo } : {}) });
+    const linhas = describeLoteadoraChange(base, { ...mudado, solicitacoes: base.solicitacoes });
+    for (const l of linhas) t = registrar(t, autor, em, { acao: "alteracao", alvo: "obra", detalhe: l, ...(carimbo ? { carimbo } : {}) });
+    next = { ...mudado, trilha: t };
+  }
   const clean = cleanLoteadora(next);
   if (!clean) throw new PmoError(`Dados da loteadora inválidos (miniaturas de foto acima de ${MAX_MINIATURAS_OBRA} por obra?).`);
-  const contar = (x: LoteadoraState) => [x.trechos.length, x.lotes.length, x.processos.length, x.equipe.length, x.solicitacoes.length, x.etapas.length, x.reforecasts.length, x.cartorio ? 1 : 0, x.frentes.length, x.diarios.length, x.rncs.length, x.boletins.length, x.fornecedores.length, x.cotacoes.length, x.pranchas.length, x.comercial.reservas.length, x.comercial.propostas.length, x.comercial.vendas.length, x.comercial.tabela ? 1 : 0, x.fechamentos.length, x.plantios.length, Object.keys(x.chuvaDecisoes).length].join(",");
+  const contar = (x: LoteadoraState) => [x.trechos.length, x.lotes.length, x.processos.length, x.equipe.length, x.solicitacoes.length, x.etapas.length, x.reforecasts.length, x.cartorio ? 1 : 0, x.frentes.length, x.diarios.length, x.rncs.length, x.boletins.length, x.fornecedores.length, x.cotacoes.length, x.pranchas.length, x.comercial.reservas.length, x.comercial.propostas.length, x.comercial.vendas.length, x.comercial.tabela ? 1 : 0, x.fechamentos.length, x.plantios.length, Object.keys(x.chuvaDecisoes).length, x.trilha.length].join(",");
   if (contar(clean) !== contar(next)) throw new PmoError("Algum item ficou inválido ou repetido (id em dobro, data ou valor fora do formato). Nada foi gravado.");
   // Período fechado (fechamento quinzenal): o que está nele não muda mais.
   const v = violacaoFechamento(periodoBloqueadoAte(base.fechamentos), base, clean);

@@ -1,5 +1,6 @@
 import { cleanLoteadora, describeLoteadoraChange, EMPTY_LOTEADORA, updateLoteadora, type LoteadoraState } from "../loteadora/state";
 import type { DecisaoChuva } from "../loteadora/campo";
+import type { Autor, Carimbo } from "../loteadora/trilha";
 import { validateDeliveryCommitment, type DeliveryCommitment } from "../delivery/delivery";
 import { ALLOCATION_CURVES, type AllocationCurve } from "../resources/profile";
 import { normalizeProgramPath } from "../portfolio/programs";
@@ -1627,8 +1628,8 @@ export function withFeasibility(p: WorkPlanning, draft: FeasibilityDraft | undef
 }
 
 /** Aplica uma mudança à Loteadora 360º da obra; o resultado inteiro é validado antes de gravar. */
-export function withLoteadora(p: WorkPlanning, muda: (s: LoteadoraState) => LoteadoraState): WorkPlanning {
-  const next = updateLoteadora(p.loteadora, muda);
+export function withLoteadora(p: WorkPlanning, muda: (s: LoteadoraState) => LoteadoraState, autor?: Autor, agoraIso?: string, carimbo?: Carimbo): WorkPlanning {
+  const next = updateLoteadora(p.loteadora, muda, autor, agoraIso, carimbo);
   if (sameJson(next, p.loteadora ?? EMPTY_LOTEADORA)) return p;
   return bump(p, { loteadora: next });
 }
@@ -1637,9 +1638,9 @@ export function withLoteadora(p: WorkPlanning, muda: (s: LoteadoraState) => Lote
  * Decide um dia de chuva do diário (3.8): aceito vira dia não útil no calendário da obra (o CPM recalcula);
  * recusado só fica registrado. As duas coisas vão na mesma gravação.
  */
-export function withDiaDeChuva(p: WorkPlanning, data: string, decisao: DecisaoChuva): WorkPlanning {
+export function withDiaDeChuva(p: WorkPlanning, data: string, decisao: DecisaoChuva, autor?: Autor): WorkPlanning {
   if (!validDate(data)) throw new PmoError("Data do dia de chuva inválida.");
-  const comDecisao = withLoteadora(p, (s) => ({ ...s, chuvaDecisoes: { ...s.chuvaDecisoes, [data]: decisao } }));
+  const comDecisao = withLoteadora(p, (s) => ({ ...s, chuvaDecisoes: { ...s.chuvaDecisoes, [data]: decisao } }), autor);
   return decisao === "aceito" ? withHolidays(comDecisao, [...comDecisao.holidays, data]) : comDecisao;
 }
 

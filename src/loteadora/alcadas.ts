@@ -8,11 +8,12 @@ import { daysBetween, isIsoDate, isObj, nonNeg, optText, text } from "./common";
  * Toda decisão grava data, pessoa, papel e justificativa. Quem decide é conferido pelo papel na equipe da obra.
  */
 
-export const PAPEIS = ["presidente", "diretoria_tecnica", "ambiental", "cfo", "projetista", "canteiro", "comercial"] as const;
+export const PAPEIS = ["presidente", "diretoria_tecnica", "consultor", "ambiental", "cfo", "projetista", "canteiro", "comercial"] as const;
 export type Papel = (typeof PAPEIS)[number];
 export const PAPEL_LABEL: Record<Papel, string> = {
   presidente: "Presidência",
   diretoria_tecnica: "Diretoria técnica (engenharia)",
+  consultor: "Consultoria técnica e orçamento",
   ambiental: "Gestão ambiental e regulatória",
   cfo: "Diretoria financeira (CFO)",
   projetista: "Engenharia de projetos",
@@ -43,7 +44,7 @@ export type Etapa = (typeof ETAPAS)[number];
 export const ETAPA_LABEL: Record<Etapa, string> = { pre_aprovacao: "Pré-aprovação técnica", presidencia: "Presidência", financeiro: "Liberação financeira" };
 /** Quem pode decidir em cada etapa (segregação de funções). */
 export const PAPEIS_DA_ETAPA: Record<Etapa, readonly Papel[]> = {
-  pre_aprovacao: ["diretoria_tecnica", "ambiental"],
+  pre_aprovacao: ["diretoria_tecnica", "consultor", "ambiental"],
   presidencia: ["presidente"],
   financeiro: ["cfo"],
 };
