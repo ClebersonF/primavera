@@ -5,3 +5,7 @@ export * from "./alcadas";
 export * from "./reforecast";
 export * from "./state";
 export * from "./alertas";
+export * from "./campo";
+export * from "./qualidade";
+export * from "./medicao";
+export * from "./suprimentos";

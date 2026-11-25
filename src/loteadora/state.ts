@@ -3,7 +3,11 @@ import { cleanFicha, cleanLote, cleanTrecho, MAX_LOTES, MAX_TRECHOS, type FichaE
 import { cleanCartorio, cleanParametros, cleanProcesso, MAX_PROCESSOS, type Cartorio, type ParametrosRegulatorios, type ProcessoRegulatorio } from "./regulatorio";
 import { cleanMembro, cleanSolicitacao, MAX_EQUIPE, MAX_SOLICITACOES, type Membro, type Solicitacao } from "./alcadas";
 import { cleanEtapa, cleanSnapshot, MAX_ETAPAS, MAX_SNAPSHOTS, type EtapaOrcamento, type SnapshotReforecast } from "./reforecast";
-import { isObj, nonNeg } from "./common";
+import { isIsoDate, isObj, nonNeg } from "./common";
+import { cleanDiario, cleanFrenteTrecho, MAX_DIARIOS, MAX_FRENTES_TRECHO, MAX_MINIATURAS_OBRA, type DiarioObra, type FrenteTrecho } from "./campo";
+import { cleanRnc, MAX_RNCS, type Rnc } from "./qualidade";
+import { cleanBoletim, MAX_BOLETINS, type Boletim } from "./medicao";
+import { cleanCotacao, cleanFornecedor, cleanPrancha, MAX_COTACOES, MAX_FORNECEDORES, MAX_PRANCHAS, type Cotacao, type Fornecedor, type Prancha } from "./suprimentos";
 
 /** Tudo o que a Loteadora 360º guarda por obra, dentro do planejamento da obra. */
 export interface LoteadoraState {
@@ -21,16 +25,35 @@ export interface LoteadoraState {
   /** VGV de referência (R$) e meta de margem bruta (0..1) para o controle de margem. */
   vgv?: number;
   metaMargem?: number;
+  /* Fase 2 — canteiro, qualidade, medições e suprimentos. */
+  frentes: FrenteTrecho[];
+  diarios: DiarioObra[];
+  rncs: Rnc[];
+  boletins: Boletim[];
+  fornecedores: Fornecedor[];
+  cotacoes: Cotacao[];
+  pranchas: Prancha[];
+  /** A partir de quando o diário é obrigatório (início das obras). */
+  inicioDiario?: string;
+  /** Pluviometria (mm) a partir da qual o dia conta como perdido por chuva; padrão 10. */
+  limiteChuvaMm?: number;
+  /** Retenção técnica padrão das medições (%); padrão 5. */
+  retencaoPct?: number;
 }
 
-export const EMPTY_LOTEADORA: LoteadoraState = Object.freeze({ ficha: {}, trechos: [], lotes: [], processos: [], equipe: [], solicitacoes: [], etapas: [], reforecasts: [] }) as LoteadoraState;
+export const EMPTY_LOTEADORA: LoteadoraState = Object.freeze({ ficha: {}, trechos: [], lotes: [], processos: [], equipe: [], solicitacoes: [], etapas: [], reforecasts: [], frentes: [], diarios: [], rncs: [], boletins: [], fornecedores: [], cotacoes: [], pranchas: [] }) as LoteadoraState;
 
 function uniqueBy<T extends { id: string }>(list: T[], max: number): T[] {
+  return uniqueKey(list, (x) => x.id, max);
+}
+
+function uniqueKey<T>(list: T[], key: (x: T) => string, max: number): T[] {
   const seen = new Set<string>();
   const out: T[] = [];
   for (const x of list) {
-    if (seen.has(x.id)) continue;
-    seen.add(x.id);
+    const k = key(x);
+    if (seen.has(k)) continue;
+    seen.add(k);
     out.push(x);
     if (out.length >= max) break;
   }
@@ -51,7 +74,24 @@ export function cleanLoteadora(v: unknown): LoteadoraState | null {
     solicitacoes: uniqueBy(arr(v.solicitacoes).flatMap((t) => cleanSolicitacao(t) ?? []), MAX_SOLICITACOES),
     etapas: uniqueBy(arr(v.etapas).flatMap((t) => cleanEtapa(t) ?? []), MAX_ETAPAS),
     reforecasts: [],
+    frentes: [],
+    diarios: [],
+    rncs: uniqueBy(arr(v.rncs).flatMap((t) => cleanRnc(t) ?? []), MAX_RNCS),
+    boletins: uniqueBy(arr(v.boletins).flatMap((t) => cleanBoletim(t) ?? []), MAX_BOLETINS),
+    fornecedores: uniqueBy(arr(v.fornecedores).flatMap((t) => cleanFornecedor(t) ?? []), MAX_FORNECEDORES),
+    cotacoes: uniqueBy(arr(v.cotacoes).flatMap((t) => cleanCotacao(t) ?? []), MAX_COTACOES),
+    pranchas: uniqueKey(arr(v.pranchas).flatMap((t) => cleanPrancha(t) ?? []), (p) => p.codigo, MAX_PRANCHAS),
   };
+  // Frentes: uma por trecho e frente.
+  s.frentes = uniqueKey(arr(v.frentes).flatMap((t) => cleanFrenteTrecho(t) ?? []), (f) => `${f.trechoId}|${f.frente}`, MAX_FRENTES_TRECHO);
+  // Diário: um por dia, em ordem. Miniaturas embutidas têm teto por obra (acima dele a gravação é recusada).
+  s.diarios = uniqueKey(arr(v.diarios).flatMap((t) => cleanDiario(t) ?? []), (d) => d.data, MAX_DIARIOS).sort((a, b) => a.data.localeCompare(b.data));
+  let mini = 0;
+  for (const d of s.diarios) for (const f of d.fotos) if (f.miniatura) mini++;
+  if (mini > MAX_MINIATURAS_OBRA) return null;
+  if (isIsoDate(v.inicioDiario)) s.inicioDiario = v.inicioDiario;
+  if (nonNeg(v.limiteChuvaMm) && v.limiteChuvaMm > 0 && v.limiteChuvaMm <= 500) s.limiteChuvaMm = v.limiteChuvaMm;
+  if (nonNeg(v.retencaoPct) && v.retencaoPct <= 30) s.retencaoPct = v.retencaoPct;
   const meses = new Set<string>();
   for (const r of arr(v.reforecasts).flatMap((t) => cleanSnapshot(t) ?? [])) {
     if (meses.has(r.mes)) continue;
@@ -74,11 +114,11 @@ export function cleanLoteadora(v: unknown): LoteadoraState | null {
  * se a limpeza descartar algum item, a mudança é recusada.
  */
 export function updateLoteadora(atual: LoteadoraState | undefined, muda: (s: LoteadoraState) => LoteadoraState): LoteadoraState {
-  const base = atual ?? EMPTY_LOTEADORA;
+  const base = cleanLoteadora(atual) ?? EMPTY_LOTEADORA;
   const next = muda(base);
   const clean = cleanLoteadora(next);
-  if (!clean) throw new PmoError("Dados da loteadora inválidos.");
-  const contar = (x: LoteadoraState) => [x.trechos.length, x.lotes.length, x.processos.length, x.equipe.length, x.solicitacoes.length, x.etapas.length, x.reforecasts.length, x.cartorio ? 1 : 0].join(",");
+  if (!clean) throw new PmoError(`Dados da loteadora inválidos (miniaturas de foto acima de ${MAX_MINIATURAS_OBRA} por obra?).`);
+  const contar = (x: LoteadoraState) => [x.trechos.length, x.lotes.length, x.processos.length, x.equipe.length, x.solicitacoes.length, x.etapas.length, x.reforecasts.length, x.cartorio ? 1 : 0, x.frentes.length, x.diarios.length, x.rncs.length, x.boletins.length, x.fornecedores.length, x.cotacoes.length, x.pranchas.length].join(",");
   if (contar(clean) !== contar(next)) throw new PmoError("Algum item ficou inválido ou repetido (id em dobro, data ou valor fora do formato). Nada foi gravado.");
   return clean;
 }
@@ -107,6 +147,18 @@ export function describeLoteadoraChange(prev: LoteadoraState | undefined, next: 
     }
   }
   if (!same(a.etapas, b.etapas)) out.push(`Orçamento por etapa: ${b.etapas.length} etapa(s)`);
+  const diff = (k: "frentes" | "diarios" | "rncs" | "boletins" | "fornecedores" | "cotacoes" | "pranchas", rotulo: string) => {
+    if (!same(a[k], b[k])) out.push(`${rotulo}: ${b[k].length}`);
+  };
+  diff("frentes", "Frentes por trecho");
+  if (b.diarios.length > a.diarios.length) out.push(`Diário de obra de ${b.diarios.at(-1)!.data} por ${b.diarios.at(-1)!.por}`);
+  else diff("diarios", "Diários de obra");
+  diff("rncs", "RNCs");
+  diff("boletins", "Boletins de medição");
+  diff("fornecedores", "Fornecedores homologados");
+  diff("cotacoes", "Cotações");
+  diff("pranchas", "Pranchas");
+  if (a.inicioDiario !== b.inicioDiario || a.limiteChuvaMm !== b.limiteChuvaMm || a.retencaoPct !== b.retencaoPct) out.push("Parâmetros de campo alterados");
   if (b.reforecasts.length > a.reforecasts.length) out.push(`Reforecast de ${b.reforecasts.at(-1)!.mes} congelado por ${b.reforecasts.at(-1)!.por}`);
   return out;
 }

@@ -5,10 +5,14 @@ import { nivelRank, type Nivel } from "./common";
 import { compararReforecast, prazoFechamento } from "./reforecast";
 import { FRENTE_LABEL, PARAMETROS_PADRAO, processoEncerrado, relogioCartorio, relogioCertificado, relogioRet, semCheckin } from "./regulatorio";
 import type { LoteadoraState } from "./state";
+import { diariosFaltando } from "./campo";
+import { prazoRnc } from "./qualidade";
+import { prazoBoletim, rotuloBoletim } from "./medicao";
+import { CERTIDAO_LABEL, homologacao, pranchasObsoletas } from "./suprimentos";
 
 /** Matriz de alertas escalonados (documento, 6.1): o mesmo cálculo para o painel e para os avisos. */
 
-export type AreaAlerta = "regulatorio" | "cartorio" | "alcadas" | "custos" | "comercial" | "cronograma";
+export type AreaAlerta = "regulatorio" | "cartorio" | "alcadas" | "custos" | "comercial" | "cronograma" | "canteiro" | "qualidade" | "medicoes" | "suprimentos";
 export interface Alerta {
   nivel: Exclude<Nivel, "verde">;
   area: AreaAlerta;
@@ -47,6 +51,8 @@ export interface EntradaAlertas {
   /** Atividades com atraso (dias úteis) em relação à linha de base. */
   atrasos?: readonly { atividade: string; dias: number }[];
   calendario?: WorkCalendar;
+  /** Hora local do canteiro ("AAAA-MM-DDTHH:MM"), para o diário das 17h30. Sem ela, usa `agora` em UTC-3. */
+  agoraLocal?: string;
 }
 
 export function alertasLoteadora(s: LoteadoraState, e: EntradaAlertas): Alerta[] {
@@ -102,6 +108,33 @@ export function alertasLoteadora(s: LoteadoraState, e: EntradaAlertas): Alerta[]
   const cad = resumoCadastro(s.lotes, s.trechos, s.ficha);
   if (cad.vendaSemMatricula.length > 0) add("critico", "comercial", "comercial", "Venda sem matrícula registrada", `${cad.vendaSemMatricula.length} lote(s) reservado(s) ou vendido(s) sem matrícula (trava legal do R-01): ${cad.vendaSemMatricula.slice(0, 5).join(", ")}${cad.vendaSemMatricula.length > 5 ? "…" : ""}.`);
   for (const a of e.atrasos ?? []) if (a.dias > 7) add("amarelo", "cronograma", "canteiro", `Atraso em ${a.atividade}`, `${a.dias} dias úteis de atraso.`);
+
+  // Fase 2 — canteiro, qualidade, medições e suprimentos.
+  if (s.inicioDiario) {
+    const local = e.agoraLocal ?? new Date(Date.parse(e.agora) - 3 * 3_600_000).toISOString().slice(0, 16);
+    const faltam = diariosFaltando(s.diarios, s.inicioDiario, local, cal);
+    if (faltam.length) add(faltam.length > 2 ? "vermelho" : "amarelo", "canteiro", "canteiro", "Diário de obra pendente", `${faltam.length} dia(s) útil(eis) sem diário (prazo 17h30 do dia): ${faltam.slice(-5).join(", ")}${faltam.length > 5 ? "…" : ""}.`);
+  }
+  for (const r of s.rncs) {
+    const pr = prazoRnc(r, e.agora);
+    add(pr.nivel, "qualidade", "canteiro", `${r.id} · trecho ${r.trechoId}`, pr.mensagem);
+  }
+  for (const b of s.boletins) {
+    const pr = prazoBoletim(b, e.hoje, cal);
+    add(pr.nivel, "medicoes", b.status === "liberado" ? "cfo" : b.status === "enviado" ? "diretoria_tecnica" : "canteiro", `Medição ${rotuloBoletim(b)}`, pr.mensagem);
+  }
+  const comContrato = new Set(s.boletins.filter((b) => b.status !== "pago").map((b) => b.fornecedorId));
+  for (const f of s.fornecedores) {
+    if (!comContrato.has(f.id)) continue;
+    const h = homologacao(f, e.hoje);
+    const vencidas = h.pendencias.filter((p) => p.includes("vencida"));
+    if (vencidas.length) add("vermelho", "suprimentos", "cfo", `Certidão vencida · ${f.nome}`, `${vencidas.join("; ")}. Pagamento não deve ser liberado.`);
+    else if (h.vencendo.length) add("amarelo", "suprimentos", "cfo", `Certidão vencendo · ${f.nome}`, `${h.vencendo.map((c) => CERTIDAO_LABEL[c]).join(", ")} vence(m) em até 30 dias.`);
+  }
+  for (const c of s.cotacoes) {
+    const obs = pranchasObsoletas(c.pranchas, s.pranchas);
+    if (obs.length) add("vermelho", "suprimentos", "projetista", `Prancha obsoleta em ${c.id}`, `${obs.map((o) => `${o.codigo} citada na ${o.citada}, vigente ${o.vigente}`).join("; ")}: refaça a requisição antes de contratar.`);
+  }
 
   return out.sort((x, y) => nivelRank(y.nivel) - nivelRank(x.nivel));
 }

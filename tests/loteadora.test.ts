@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  EMPTY_PLANNING, PARAMETROS_PADRAO, PmoError, addYears, alertasLoteadora, compararReforecast, congelarReforecast, decidir, describePlanningChange,
+  EMPTY_LOTEADORA, EMPTY_PLANNING, PARAMETROS_PADRAO, PmoError, addYears, alertasLoteadora, compararReforecast, congelarReforecast, decidir, describePlanningChange,
   etapasExigidas, filaDeAprovacao, importLotesCsv, importTrechosCsv, nivelGeral, normalizePlanning, novaSolicitacao, prazoFechamento, reenviar,
   relogioCartorio, relogioCertificado, relogioRet, resumoCadastro, semCheckin, slaAprovacao, slaExecutivo, statusSolicitacao, tempoInternoExterno,
   validarParametros, withLoteadora, type Membro, type ProcessoRegulatorio, type Solicitacao,
@@ -141,6 +141,7 @@ describe("reforecast e alertas", () => {
   });
   it("junta os alertas com destinatários por nível e ordena do mais grave", () => {
     const s = {
+      ...EMPTY_LOTEADORA,
       ficha: {}, trechos: [], equipe: [pres, eng, amb, cfo, obra],
       lotes: importLotesCsv("quadra;lote;area;comercial\nA;1;200;vendido").itens,
       processos: [{ id: "PR-001", frente: "ambiental" as const, orgao: "CETESB", assunto: "LI", situacao: "ret_aberto" as const, eventos: [], ret: { emitidoEm: "2026-10-16" } }],
