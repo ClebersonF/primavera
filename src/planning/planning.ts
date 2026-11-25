@@ -1,3 +1,4 @@
+import { cleanLoteadora, describeLoteadoraChange, EMPTY_LOTEADORA, updateLoteadora, type LoteadoraState } from "../loteadora/state";
 import { validateDeliveryCommitment, type DeliveryCommitment } from "../delivery/delivery";
 import { ALLOCATION_CURVES, type AllocationCurve } from "../resources/profile";
 import { normalizeProgramPath } from "../portfolio/programs";
@@ -318,6 +319,8 @@ export interface WorkPlanning {
   feasibility?: FeasibilityDraft;
   /** Compromisso de entrega das obras ao comprador (data e tolerância); ausente = não informado. */
   delivery?: DeliveryCommitment;
+  /** Loteadora 360º (Sol Maior): cadastro de lotes e trechos, radar regulatório, alçadas e reforecast. */
+  loteadora?: LoteadoraState;
   /** Programa ou carteira a que o projeto pertence (nível acima do projeto); ausente = sem programa. */
   program?: string;
 }
@@ -1014,6 +1017,8 @@ export function normalizePlanning(raw: unknown): WorkPlanning {
       /* descarta compromisso inválido */
     }
   }
+  const loteadora = raw.loteadora === undefined ? null : cleanLoteadora(raw.loteadora);
+  if (loteadora) result.loteadora = loteadora;
   if (Number.isInteger(raw.primaryBaseline) && (raw.primaryBaseline as number) >= 0 && (raw.primaryBaseline as number) < baselines.length) {
     result.primaryBaseline = raw.primaryBaseline as number;
   }
@@ -1620,6 +1625,13 @@ export function withFeasibility(p: WorkPlanning, draft: FeasibilityDraft | undef
   return bump(clean ? ({ ...rest, feasibility: clean } as WorkPlanning) : (rest as WorkPlanning), {});
 }
 
+/** Aplica uma mudança à Loteadora 360º da obra; o resultado inteiro é validado antes de gravar. */
+export function withLoteadora(p: WorkPlanning, muda: (s: LoteadoraState) => LoteadoraState): WorkPlanning {
+  const next = updateLoteadora(p.loteadora, muda);
+  if (sameJson(next, p.loteadora ?? EMPTY_LOTEADORA)) return p;
+  return bump(p, { loteadora: next });
+}
+
 /** Define (ou limpa, com `undefined`) o tipo de empreendimento. */
 export function withProjectKind(p: WorkPlanning, kind: ProjectKind | undefined): WorkPlanning {
   if (kind !== undefined && !(PROJECT_KINDS as readonly string[]).includes(kind)) throw new PmoError(`Tipo de empreendimento inválido. Use: ${PROJECT_KINDS.join(", ")}.`);
@@ -1795,6 +1807,7 @@ export function describePlanningChange(prev: WorkPlanning, next: WorkPlanning): 
   }
   for (const q of prev.issues) if (!next.issues.some((x) => x.id === q.id)) out.push(`Questão ${q.id} removida`);
   if (!sameJson(prev.delivery, next.delivery)) out.push(next.delivery ? `Compromisso de entrega: ${next.delivery.date} (+${next.delivery.toleranceDays} dias de tolerância)${next.delivery.activityId ? " ligado a uma atividade" : ""}` : "Compromisso de entrega removido");
+  out.push(...describeLoteadoraChange(prev.loteadora, next.loteadora));
   if (!sameJson(prev.feasibility, next.feasibility)) out.push(next.feasibility ? "Estudo de viabilidade atualizado" : "Estudo de viabilidade removido");
   if (prev.kind !== next.kind) out.push(next.kind ? `Tipo de empreendimento: ${PROJECT_KIND_LABEL[next.kind]}` : "Tipo de empreendimento removido");
   if (prev.program !== next.program) out.push(next.program ? `Programa: ${next.program}` : "Programa removido");
