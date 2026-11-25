@@ -38,6 +38,8 @@ describe("trilha encadeada", () => {
     const ult = s.trilha.at(-1)!;
     expect(ult).toMatchObject({ acao: "alcada_devolver", alvo: "AL-0001", justificativa: "Falta parecer técnico", impacto: 50_000, seq: 2 });
     expect(verificarTrilha(s.trilha)).toEqual({ integra: true, total: 2 });
+    // Relida como viria do banco (JSON + limpeza), a corrente continua íntegra.
+    expect(verificarTrilha(updateLoteadora(JSON.parse(JSON.stringify(s)), (x) => x).trilha)).toEqual({ integra: true, total: 2 });
     const adulterada = s.trilha.map((r, i) => (i === 0 ? { ...r, detalhe: "outra coisa" } : r));
     expect(verificarTrilha(adulterada)).toMatchObject({ integra: false, quebraEm: 1 });
     expect(() => updateLoteadora(s, (x) => ({ ...x, trilha: adulterada }))).toThrow(/só de inclusão/);

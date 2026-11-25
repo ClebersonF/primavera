@@ -68,20 +68,23 @@ export function cleanRegistro(v: unknown): RegistroTrilha | null {
   return r;
 }
 
+/** Mesma normalização da leitura (espaços colapsados), para o hash calculado aqui bater com o relido do banco. */
+const norm = (v: string, max: number) => v.trim().replace(/\s+/g, " ").slice(0, max).trim();
+
 export function registrar(trilha: readonly RegistroTrilha[], autor: Autor, agoraIso: string, e: { acao: string; alvo: string; detalhe: string; justificativa?: string; impacto?: number; carimbo?: Carimbo }): RegistroTrilha[] {
   if (trilha.length >= MAX_TRILHA) throw new PmoError("Trilha cheia nesta obra: migre os dados para o Odoo (Onda 3).");
   const ult = trilha.at(-1);
   const base: Omit<RegistroTrilha, "hash"> = {
     seq: (ult?.seq ?? 0) + 1,
     em: agoraIso,
-    usuario: autor.usuario.trim().slice(0, 160) || "—",
-    ...(autor.email ? { email: autor.email.slice(0, 160) } : {}),
+    usuario: norm(autor.usuario, 160) || "—",
+    ...(autor.email && norm(autor.email, 160) ? { email: norm(autor.email, 160) } : {}),
     ...(autor.papel ? { papel: autor.papel } : {}),
     autenticado: autor.autenticado,
-    acao: e.acao.slice(0, 60),
-    alvo: e.alvo.slice(0, 80),
-    detalhe: e.detalhe.slice(0, 1000),
-    ...(e.justificativa ? { justificativa: e.justificativa.slice(0, 1000) } : {}),
+    acao: norm(e.acao, 60) || "—",
+    alvo: norm(e.alvo, 80) || "—",
+    detalhe: norm(e.detalhe, 1000) || "—",
+    ...(e.justificativa && norm(e.justificativa, 1000) ? { justificativa: norm(e.justificativa, 1000) } : {}),
     ...(e.impacto !== undefined ? { impacto: e.impacto } : {}),
     ...(e.carimbo ? { carimbo: e.carimbo } : {}),
     anterior: ult?.hash ?? GENESIS,
