@@ -1,5 +1,5 @@
 import { PmoError } from "../errors";
-import { daysBetween, isIsoDate, isObj, nonNeg, optText, text, type Nivel } from "./common";
+import { dataBr, daysBetween, isIsoDate, isObj, nonNeg, optText, text, type Nivel } from "./common";
 import { FRENTES_OBRA, type FrenteObra } from "./campo";
 import { rncAberta, type Rnc } from "./qualidade";
 import type { Boletim } from "./medicao";
@@ -75,7 +75,7 @@ export function homologacao(f: Fornecedor, hoje: string): Homologacao {
   for (const c of CERTIDOES) {
     const val = f.certidoes[c];
     if (!val) p.push(`${CERTIDAO_LABEL[c]} não informada`);
-    else if (val < hoje) p.push(`${CERTIDAO_LABEL[c]} vencida em ${val}`);
+    else if (val < hoje) p.push(`${CERTIDAO_LABEL[c]} vencida em ${dataBr(val)}`);
     else if (daysBetween(hoje, val) <= 30) vencendo.push(c);
   }
   if (f.frentes.length === 0) p.push("Nenhuma frente de serviço informada");

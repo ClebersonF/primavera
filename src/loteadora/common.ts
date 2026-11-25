@@ -47,3 +47,6 @@ export type Nivel = (typeof NIVEIS)[number];
 export const NIVEL_LABEL: Record<Nivel, string> = { verde: "Verde · normal", amarelo: "Amarelo · atenção", vermelho: "Vermelho · urgente", critico: "Crítico · máximo" };
 export const nivelRank = (n: Nivel) => NIVEIS.indexOf(n);
 export const pior = (a: Nivel, b: Nivel): Nivel => (nivelRank(a) >= nivelRank(b) ? a : b);
+
+/** AAAA-MM-DD → DD/MM/AAAA, para mensagens. */
+export const dataBr = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}`;

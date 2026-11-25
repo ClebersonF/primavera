@@ -1,6 +1,6 @@
 import { DEFAULT_CALENDAR, workDaysBetween, type WorkCalendar } from "../cpm/calendar";
 import { PmoError } from "../errors";
-import { addDays, isIsoDate, isObj, nonNeg, optText, text, type Nivel } from "./common";
+import { addDays, dataBr, isIsoDate, isObj, nonNeg, optText, text, type Nivel } from "./common";
 import { FRENTES_OBRA, FRENTE_OBRA_LABEL, type FrenteObra } from "./campo";
 
 /**
@@ -180,10 +180,10 @@ export function pagarBoletim(b: Boletim, em: string): Boletim {
 
 /** Prazo da etapa em que o boletim está: envio D+1, conferência 2 d.u., pagamento até 10 d.u. pós-NF. */
 export function prazoBoletim(b: Boletim, hoje: string, cal: WorkCalendar = DEFAULT_CALENDAR): { nivel: Nivel; mensagem: string } {
-  if (b.status === "pago") return { nivel: "verde", mensagem: `Pago em ${b.pagoEm}.` };
+  if (b.status === "pago") return { nivel: "verde", mensagem: `Pago em ${dataBr(b.pagoEm!)}.` };
   if (b.status === "rascunho" || b.status === "devolvido") {
     const limite = addDays(b.quinzena, 1);
-    return hoje > limite ? { nivel: "amarelo", mensagem: `Envio do campo vencido em ${limite} (D+1 da quinzena).` } : { nivel: "verde", mensagem: `Enviar até ${limite}.` };
+    return hoje > limite ? { nivel: "amarelo", mensagem: `Envio do campo vencido em ${dataBr(limite)} (D+1 da quinzena).` } : { nivel: "verde", mensagem: `Enviar até ${dataBr(limite)}.` };
   }
   if (b.status === "enviado") {
     const du = workDaysBetween(b.enviadoEm!.slice(0, 10), hoje, cal);
@@ -203,4 +203,4 @@ export function realizadoMedicoes(lista: readonly Boletim[]): Record<string, num
   return out;
 }
 
-export const rotuloBoletim = (b: Boletim) => `${b.id} · ${b.trechoId} · ${FRENTE_OBRA_LABEL[b.frente].slice(4)} · quinzena ${b.quinzena}`;
+export const rotuloBoletim = (b: Boletim) => `${b.id} · ${b.trechoId} · ${FRENTE_OBRA_LABEL[b.frente].slice(4)} · quinzena ${dataBr(b.quinzena)}`;

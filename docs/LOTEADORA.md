@@ -1,4 +1,4 @@
-# Loteadora 360º — Fase 1 (Sol Maior)
+# Loteadora 360º — Fases 1 e 2 (Sol Maior)
 
 Implementa a parte de governança e prazos do "Documento Operacional e Diretrizes do Sistema de Gestão 360º" da Loteadora Sol Maior, com o piloto Nova Marina em mente. A lógica fica em `src/loteadora/` (sem React); a tela é `/pmo/loteadora` no app.
 
@@ -18,6 +18,17 @@ No campo `loteadora` do planejamento da obra (`WorkPlanning`), gravado junto com
 
 Todos os prazos são parâmetros editáveis por obra (`ParametrosRegulatorios`); o padrão é o do documento.
 
+## Fase 2 — canteiro e anti-refação
+
+| Arquivo | O que faz | Regras do documento |
+| --- | --- | --- |
+| `campo.ts` | Gates das 8 frentes por trecho, checklist de liberação, diário de obra | Pavimentação só com drenagem, água/esgoto e guias 100%; TVO com todas as frentes e zero RNC aberta no trecho; conclusão exige checklist completo; diário até 17h30 com efetivo, equipamentos, clima, pluviometria, avanço por trecho e fotos datadas/georreferenciadas; dia de chuva a partir de 10 mm (parâmetro) |
+| `qualidade.ts` | RNC | Plano de ação em 48 h; correção e validação pela diretoria técnica; aberta há mais de 7 dias é alerta; índice de refação = custo de retrabalho ÷ custo direto (meta < 1,5%) |
+| `medicao.ts` | Boletim de medição quinzenal | Dias 15 e 30 com envio em D+1 e ao menos uma foto do diário; conferência em 2 d.u. bloqueada por RNC aberta no trecho e por excesso sobre o contrato sem aditivo aprovado; financeiro exige NF, conferência fiscal, SST e retenção (padrão 5%); pago entra no realizado da atividade |
+| `suprimentos.ts` | Fornecedores, cotações, pranchas | Homologação: experiência em SP (m³/m²/m), garantia ≥ 5 anos, ABNT e 5 certidões válidas; score 0–100 por RNC, devoluções e certidões; cotação com 3 propostas de homologados ou justificativa, e justificativa fora do menor preço; escolha abre a contratação na Central de Alçadas; só a última revisão da prancha é vigente e cotação com revisão superada vira alerta |
+
+As fotos do diário vão para o repositório de arquivos (bucket privado, ação `signed_document_url` do `odoo-patrimony` para exibir). Sem login no servidor o envio falha e a foto fica como miniatura de 320 px no próprio diário, com teto de 40 por obra.
+
 ## Formato do CSV
 
 Lotes: `quadra;lote;area_m2;matricula;trecho;fisico;comercial`. Trechos: `id;rua;trecho;largura_pista_m;passeio_m;pavimento_m2`. Aceita ponto e vírgula ou vírgula, campos entre aspas e números no padrão brasileiro ("1.400,50"). Cabeçalhos com unidade ("Área (m²)") são reconhecidos. A importação substitui a lista atual; linhas com erro são listadas e ignoradas.
@@ -26,4 +37,4 @@ Lotes: `quadra;lote;area_m2;matricula;trecho;fisico;comercial`. Trechos: `id;rua
 
 - Os alertas são calculados quando a tela abre. O envio por WhatsApp ou e-mail depende de tarefas agendadas no servidor, ainda não criadas.
 - "Agindo como" na Central de Alçadas registra quem decidiu e aplica a segregação por papel, mas não é autenticação: o papel ainda não vem do login.
-- Fora desta fase: espelho de vendas e reservas com expiração, diário de obra, RNC, boletim de medição por trecho, gates por trecho e versionamento de pranchas.
+- Fora das fases 1 e 2: espelho de vendas e reservas com expiração, proposta e contrato do comprador, VSO e breakeven reais, painel por perfil e relatórios PDF agendados (Fase 3); app de canteiro offline.

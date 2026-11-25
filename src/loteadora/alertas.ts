@@ -1,7 +1,7 @@
 import { DEFAULT_CALENDAR, type WorkCalendar } from "../cpm/calendar";
 import { PAPEL_LABEL, slaAprovacao, statusSolicitacao, type Membro, type Papel } from "./alcadas";
 import { resumoCadastro } from "./cadastro";
-import { nivelRank, type Nivel } from "./common";
+import { dataBr, nivelRank, type Nivel } from "./common";
 import { compararReforecast, prazoFechamento } from "./reforecast";
 import { FRENTE_LABEL, PARAMETROS_PADRAO, processoEncerrado, relogioCartorio, relogioCertificado, relogioRet, semCheckin } from "./regulatorio";
 import type { LoteadoraState } from "./state";
@@ -102,7 +102,7 @@ export function alertasLoteadora(s: LoteadoraState, e: EntradaAlertas): Alerta[]
     const [y, m] = e.hoje.split("-").map(Number) as [number, number];
     const anterior = m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, "0")}`;
     if (!s.reforecasts.some((x) => x.mes === anterior) && e.hoje > prazoFechamento(anterior, cal)) {
-      add("amarelo", "custos", "cfo", `Fechamento de ${anterior} pendente`, `O reforecast de ${anterior} devia estar congelado até ${prazoFechamento(anterior, cal)}.`);
+      add("amarelo", "custos", "cfo", `Fechamento de ${anterior} pendente`, `O reforecast de ${anterior} devia estar congelado até ${dataBr(prazoFechamento(anterior, cal))}.`);
     }
   }
   const cad = resumoCadastro(s.lotes, s.trechos, s.ficha);
@@ -113,7 +113,7 @@ export function alertasLoteadora(s: LoteadoraState, e: EntradaAlertas): Alerta[]
   if (s.inicioDiario) {
     const local = e.agoraLocal ?? new Date(Date.parse(e.agora) - 3 * 3_600_000).toISOString().slice(0, 16);
     const faltam = diariosFaltando(s.diarios, s.inicioDiario, local, cal);
-    if (faltam.length) add(faltam.length > 2 ? "vermelho" : "amarelo", "canteiro", "canteiro", "Diário de obra pendente", `${faltam.length} dia(s) útil(eis) sem diário (prazo 17h30 do dia): ${faltam.slice(-5).join(", ")}${faltam.length > 5 ? "…" : ""}.`);
+    if (faltam.length) add(faltam.length > 2 ? "vermelho" : "amarelo", "canteiro", "canteiro", "Diário de obra pendente", `${faltam.length} dia(s) útil(eis) sem diário (prazo 17h30 do dia): ${faltam.slice(-5).map(dataBr).join(", ")}${faltam.length > 5 ? "…" : ""}.`);
   }
   for (const r of s.rncs) {
     const pr = prazoRnc(r, e.agora);
