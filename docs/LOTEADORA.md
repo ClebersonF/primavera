@@ -49,12 +49,20 @@ CPF/CNPJ dos compradores ficam no planejamento da obra e aparecem mascarados nas
 | `fechamento.ts` | Fechamento quinzenal | Fecha a quinzena até D+3 sem boletins no campo ou em conferência; depois disso diários e boletins do período não mudam (o financeiro do boletim continua); fechamento não se desfaz |
 | `plantio.ts` | Plantio compensatório | TCRA com mudas exigidas; vistoria mensal cobrada a partir do dia 10; pega abaixo da meta (85%) pede replantio; 24 meses de manutenção |
 
+## Ondas 4 e 5 do plano de gaps
+
+| Arquivo | O que faz | Regra |
+| --- | --- | --- |
+| `avisos.ts` | `gatilhos`, `avisosDeAlertas`, `planejarAvisos`, `registrarEnvios`, `textoAviso` | Evento sai uma vez; alerta repete a cada 7 dias (amarelo), 24 h (vermelho) ou 12 h (crítico), ou na hora se piorar. WhatsApp só no vermelho e crítico, para quem tem telefone na equipe |
+| `relatorio.ts` | `relatorioExecutivoHtml`, `segundaDaSemana` | Mesmo HTML do botão do Painel e do e-mail semanal à diretoria (presidente, CFO, diretoria técnica) |
+| `offline.ts` | `aplicarOperacao`, `conflitoOperacao`, `descreverOperacao` | Diário, RNC e checklist sem sinal viram operações; na volta, RNC ganha o próximo número; diário gravado por outra pessoa depois, ou frente concluída, vira conflito e não sobrescreve |
+
 ## Formato do CSV
 
 Lotes: `quadra;lote;area_m2;matricula;trecho;fisico;comercial`. Trechos: `id;rua;trecho;largura_pista_m;passeio_m;pavimento_m2`. Aceita ponto e vírgula ou vírgula, campos entre aspas e números no padrão brasileiro ("1.400,50"). Cabeçalhos com unidade ("Área (m²)") são reconhecidos. A importação substitui a lista atual; linhas com erro são listadas e ignoradas.
 
 ## Limites desta fase
 
-- Os alertas são calculados quando a tela abre. O envio por WhatsApp ou e-mail depende de tarefas agendadas no servidor, ainda não criadas.
-- "Agindo como" na Central de Alçadas registra quem decidiu e aplica a segregação por papel, mas não é autenticação: o papel ainda não vem do login.
-- Fora das três fases: envio automático de alertas e relatórios (WhatsApp/e-mail), login com papéis no servidor, mapa georreferenciado do espelho, conciliação bancária das baixas e app de canteiro offline.
+- O envio automático roda pela rota `/api/public/loteadora/rotina`, chamada de hora em hora pelo agendador; sem RESEND_API_KEY e LOTEADORA_EMAIL_FROM ela só calcula.
+- O papel vem do perfil da sessão ou da equipe pelo e-mail do login; o carimbo do servidor só existe com login real.
+- Fora do escopo atual: modelos próprios no Odoo (Onda 3), mapa georreferenciado do espelho e conciliação bancária das baixas.

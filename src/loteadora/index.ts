@@ -19,3 +19,4 @@ export * from "./governanca";
 export * from "./trilha";
 export * from "./avisos";
 export * from "./relatorio";
+export * from "./offline";
