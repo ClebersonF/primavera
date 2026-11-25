@@ -182,6 +182,12 @@ export function registrarAvanco(lista: readonly FrenteTrecho[], trechoId: string
   const base = frenteDe(lista, trechoId, frente);
   if (!base?.iniciadaEm) throw new PmoError(`${FRENTE_OBRA_LABEL[frente].slice(4)} ainda não foi iniciada no trecho ${trechoId}.`);
   if (base.concluidaEm) return [...lista];
+  // Gate 6 (anti-refação): nenhum avanço de base, imprimação ou CBUQ com subterrâneo e guias pendentes na rua.
+  if (frente === "pavimentacao" && percent > base.percent) {
+    const pend = PRE_REQUISITOS.pavimentacao.filter((p) => !frenteConcluida(frenteDe(lista, trechoId, p)));
+    if (pend.length)
+      throw new PmoError(`Trava do Gate 6 (anti-refação) no trecho ${trechoId}: pavimentação não avança antes de 100% de ${pend.map((p) => FRENTE_OBRA_LABEL[p].slice(4).toLowerCase()).join(", ")}.`);
+  }
   return substituir(lista, { ...base, percent: Math.max(base.percent, Math.round(percent * 10) / 10) });
 }
 

@@ -20,3 +20,4 @@ export * from "./trilha";
 export * from "./avisos";
 export * from "./relatorio";
 export * from "./offline";
+export * from "./seed-nova-marina";
