@@ -1,4 +1,4 @@
-# Loteadora 360º — Fases 1 e 2 (Sol Maior)
+# Loteadora 360º — Fases 1, 2 e 3 (Sol Maior)
 
 Implementa a parte de governança e prazos do "Documento Operacional e Diretrizes do Sistema de Gestão 360º" da Loteadora Sol Maior, com o piloto Nova Marina em mente. A lógica fica em `src/loteadora/` (sem React); a tela é `/pmo/loteadora` no app.
 
@@ -29,6 +29,15 @@ Todos os prazos são parâmetros editáveis por obra (`ParametrosRegulatorios`);
 
 As fotos do diário vão para o repositório de arquivos (bucket privado, ação `signed_document_url` do `odoo-patrimony` para exibir). Sem login no servidor o envio falha e a foto fica como miniatura de 320 px no próprio diário, com teto de 40 por obra.
 
+## Fase 3 — comercial e BI 360º
+
+| Arquivo | O que faz | Regras do documento |
+| --- | --- | --- |
+| `comercial.ts` | Tabela, reservas, propostas, vendas, indicadores, fluxo de caixa | Sem registro do loteamento (R-01) e matrícula do lote, não reserva nem vende; reserva de 48 h ligada a CPF/CNPJ válido; proposta abaixo da tabela, com entrada menor que a mínima ou mais parcelas que o máximo abre exceção comercial na Central de Alçadas (Presidência); contrato exige crédito aprovado e exceção aprovada; parcelas Price mensais; entrega exige entrada paga, infraestrutura concluída e termo assinado; VSO = vendas do mês ÷ estoque no início do mês; inadimplência = vencido há mais de 30 dias ÷ vencido; breakeven padrão de 80 lotes |
+| `painel.ts` | Resumo por empreendimento e KPIs por perfil | Presidência vê tudo; Engenharia (IDP, avanço, RNC, refação, chuva); Ambiental (cartório, processos, RET); Financeiro (IDC, margem, desvio, carteira, inadimplência, VSO) |
+
+CPF/CNPJ dos compradores ficam no planejamento da obra e aparecem mascarados nas telas. A reserva expira pelo relógio, na leitura; não há tarefa agendada. O relatório executivo abre numa página própria e sai em PDF pela impressão do navegador.
+
 ## Formato do CSV
 
 Lotes: `quadra;lote;area_m2;matricula;trecho;fisico;comercial`. Trechos: `id;rua;trecho;largura_pista_m;passeio_m;pavimento_m2`. Aceita ponto e vírgula ou vírgula, campos entre aspas e números no padrão brasileiro ("1.400,50"). Cabeçalhos com unidade ("Área (m²)") são reconhecidos. A importação substitui a lista atual; linhas com erro são listadas e ignoradas.
@@ -37,4 +46,4 @@ Lotes: `quadra;lote;area_m2;matricula;trecho;fisico;comercial`. Trechos: `id;rua
 
 - Os alertas são calculados quando a tela abre. O envio por WhatsApp ou e-mail depende de tarefas agendadas no servidor, ainda não criadas.
 - "Agindo como" na Central de Alçadas registra quem decidiu e aplica a segregação por papel, mas não é autenticação: o papel ainda não vem do login.
-- Fora das fases 1 e 2: espelho de vendas e reservas com expiração, proposta e contrato do comprador, VSO e breakeven reais, painel por perfil e relatórios PDF agendados (Fase 3); app de canteiro offline.
+- Fora das três fases: envio automático de alertas e relatórios (WhatsApp/e-mail), login com papéis no servidor, mapa georreferenciado do espelho, conciliação bancária das baixas e app de canteiro offline.
