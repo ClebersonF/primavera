@@ -1,5 +1,5 @@
 import { PmoError } from "../errors";
-import { PAPEIS, type Papel, type Solicitacao } from "./alcadas";
+import { ETAPA_LABEL, PAPEIS, TIPO_LABEL, type Papel, type Solicitacao } from "./alcadas";
 import { isObj, nonNeg, optText, text } from "./common";
 import { sha256Hex } from "./sha256";
 
@@ -108,15 +108,18 @@ export function trilhaSoInclusao(antes: readonly RegistroTrilha[], depois: reado
   return true;
 }
 
+const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+const ACAO_TXT = { aprovar: "aprovada", devolver: "devolvida", reprovar: "reprovada" } as const;
+
 /** Registros de decisões de alçada novas entre dois estados (com justificativa e impacto no reforecast). */
 export function eventosDeAlcada(antes: readonly Solicitacao[], depois: readonly Solicitacao[]): { acao: string; alvo: string; detalhe: string; justificativa?: string; impacto?: number }[] {
   const mapa = new Map(antes.map((s) => [s.id, s]));
   const out: { acao: string; alvo: string; detalhe: string; justificativa?: string; impacto?: number }[] = [];
   for (const s of depois) {
     const o = mapa.get(s.id);
-    if (!o) out.push({ acao: "alcada_aberta", alvo: s.id, detalhe: `${s.titulo} (${s.tipo}, R$ ${s.valor.toFixed(2)})`, ...(s.impactoReforecast !== undefined ? { impacto: s.impactoReforecast } : {}) });
+    if (!o) out.push({ acao: "alcada_aberta", alvo: s.id, detalhe: `${s.titulo} (${TIPO_LABEL[s.tipo]}, ${brl(s.valor)})`, ...(s.impactoReforecast !== undefined ? { impacto: s.impactoReforecast } : {}) });
     for (const d of s.decisoes.slice(o?.decisoes.length ?? 0)) {
-      out.push({ acao: `alcada_${d.acao}`, alvo: s.id, detalhe: `${d.etapa}: ${d.acao} por ${d.nome}`, ...(d.justificativa ? { justificativa: d.justificativa } : {}), ...(s.impactoReforecast !== undefined ? { impacto: s.impactoReforecast } : {}) });
+      out.push({ acao: `alcada_${d.acao}`, alvo: s.id, detalhe: `${ETAPA_LABEL[d.etapa]}: ${ACAO_TXT[d.acao]} por ${d.nome}`, ...(d.justificativa ? { justificativa: d.justificativa } : {}), ...(s.impactoReforecast !== undefined ? { impacto: s.impactoReforecast } : {}) });
     }
     for (const r of s.reenvios.slice(o?.reenvios.length ?? 0)) out.push({ acao: "alcada_reenviada", alvo: s.id, detalhe: `Reenviada por ${r.por}`, justificativa: r.ajuste });
   }
