@@ -113,22 +113,22 @@ function splitLine(line: string, sep: string): string[] {
   out.push(cur.trim());
   return out;
 }
-const fold = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
+export const csvFold = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
 /** Número de planilha brasileira ("1.400", "250,50", "1.234,5 m²"); unidades e espaços são ignorados. */
-const brNum = (s: string): number => parseBrNumber(s.replace(/[^\d.,-]/g, ""));
+export const csvNum = (s: string): number => parseBrNumber(s.replace(/[^\d.,-]/g, ""));
 
-function table(textIn: string): { header: string[]; rows: { linha: number; cells: string[] }[] } {
+export function csvTabela(textIn: string): { header: string[]; rows: { linha: number; cells: string[] }[] } {
   const lines = textIn.replace(/^﻿/, "").split(/\r?\n/);
   const first = lines.findIndex((l) => l.trim() !== "");
   if (first < 0) throw new PmoError("Arquivo vazio.");
   const sep = (lines[first]!.match(/;/g) ?? []).length >= (lines[first]!.match(/,/g) ?? []).length ? ";" : lines[first]!.includes("\t") ? "\t" : ",";
-  const header = splitLine(lines[first]!, sep).map(fold);
+  const header = splitLine(lines[first]!, sep).map(csvFold);
   const rows = lines.slice(first + 1).map((l, i) => ({ linha: first + i + 2, cells: splitLine(l, sep) })).filter((r) => r.cells.some((c) => c !== ""));
   return { header, rows };
 }
 
 /** Coluna pelo nome (sem acento, caixa ou símbolos); unidades no fim do nome são ignoradas ("Área (m²)" = "area"). */
-const col = (header: string[], ...names: string[]) => {
+export const csvColuna = (header: string[], ...names: string[]) => {
   const exact = header.findIndex((h) => names.includes(h));
   if (exact >= 0) return exact;
   return header.findIndex((h) => names.some((n) => n.length >= 4 && (h === `${n}m` || h === `${n}m2` || h === `${n}ha`)));
@@ -140,20 +140,20 @@ const col = (header: string[], ...names: string[]) => {
  * Situação ausente: física "a_executar" e comercial "bloqueado" (sem matrícula não se vende — trava R-01).
  */
 export function importLotesCsv(csv: string): ImportResultado<Lote> {
-  const { header, rows } = table(csv);
-  const iq = col(header, "quadra", "qd"), il = col(header, "lote", "numero", "n", "lt"), ia = col(header, "area", "aream2", "areatotal");
+  const { header, rows } = csvTabela(csv);
+  const iq = csvColuna(header, "quadra", "qd"), il = csvColuna(header, "lote", "numero", "n", "lt"), ia = csvColuna(header, "area", "aream2", "areatotal");
   if (iq < 0 || il < 0 || ia < 0) throw new PmoError("A planilha precisa das colunas quadra, lote e área.");
-  const im = col(header, "matricula"), it = col(header, "trecho", "trechoid", "rua"), ifi = col(header, "fisico", "statusfisico"), ic = col(header, "comercial", "statuscomercial");
+  const im = csvColuna(header, "matricula"), it = csvColuna(header, "trecho", "trechoid", "rua"), ifi = csvColuna(header, "fisico", "statusfisico"), ic = csvColuna(header, "comercial", "statuscomercial");
   const itens: Lote[] = [];
   const erros: ImportErro[] = [];
   const vistos = new Set<string>();
   for (const r of rows) {
     if (itens.length >= MAX_LOTES) { erros.push({ linha: r.linha, mensagem: `Limite de ${MAX_LOTES} lotes atingido.` }); break; }
-    const statusF = ifi >= 0 ? fold(r.cells[ifi] ?? "") : "";
-    const statusC = ic >= 0 ? fold(r.cells[ic] ?? "") : "";
-    const fisico = (STATUS_FISICO.find((s) => fold(s) === statusF || fold(STATUS_FISICO_LABEL[s]) === statusF) ?? "a_executar") as StatusFisico;
-    const comercial = (STATUS_COMERCIAL.find((s) => fold(s) === statusC || fold(STATUS_COMERCIAL_LABEL[s]) === statusC) ?? "bloqueado") as StatusComercial;
-    const lote = cleanLote({ quadra: r.cells[iq], numero: r.cells[il], areaM2: brNum(r.cells[ia] ?? ""), matricula: im >= 0 ? r.cells[im] : undefined, trechoId: it >= 0 ? r.cells[it] : undefined, fisico, comercial });
+    const statusF = ifi >= 0 ? csvFold(r.cells[ifi] ?? "") : "";
+    const statusC = ic >= 0 ? csvFold(r.cells[ic] ?? "") : "";
+    const fisico = (STATUS_FISICO.find((s) => csvFold(s) === statusF || csvFold(STATUS_FISICO_LABEL[s]) === statusF) ?? "a_executar") as StatusFisico;
+    const comercial = (STATUS_COMERCIAL.find((s) => csvFold(s) === statusC || csvFold(STATUS_COMERCIAL_LABEL[s]) === statusC) ?? "bloqueado") as StatusComercial;
+    const lote = cleanLote({ quadra: r.cells[iq], numero: r.cells[il], areaM2: csvNum(r.cells[ia] ?? ""), matricula: im >= 0 ? r.cells[im] : undefined, trechoId: it >= 0 ? r.cells[it] : undefined, fisico, comercial });
     if (!lote) { erros.push({ linha: r.linha, mensagem: "Quadra, lote ou área inválidos." }); continue; }
     if (vistos.has(lote.id)) { erros.push({ linha: r.linha, mensagem: `Lote ${lote.id} repetido.` }); continue; }
     vistos.add(lote.id);
@@ -164,17 +164,17 @@ export function importLotesCsv(csv: string): ImportResultado<Lote> {
 
 /** Trechos: colunas rua; trecho|nome; id (opcional, senão gerado); largura|pista; passeio|calcada; pavimento|aream2. */
 export function importTrechosCsv(csv: string): ImportResultado<Trecho> {
-  const { header, rows } = table(csv);
-  const ir = col(header, "rua", "via", "logradouro"), in_ = col(header, "trecho", "nome", "segmento");
+  const { header, rows } = csvTabela(csv);
+  const ir = csvColuna(header, "rua", "via", "logradouro"), in_ = csvColuna(header, "trecho", "nome", "segmento");
   if (ir < 0 || in_ < 0) throw new PmoError("A planilha precisa das colunas rua e trecho.");
-  const iid = col(header, "id", "codigo"), il = col(header, "largura", "larguradapista", "pista", "largurapistam"), ip = col(header, "passeio", "calcada", "passeiom"), ia = col(header, "pavimento", "pavimentom2", "aream2", "area");
+  const iid = csvColuna(header, "id", "codigo"), il = csvColuna(header, "largura", "larguradapista", "pista", "largurapistam"), ip = csvColuna(header, "passeio", "calcada", "passeiom"), ia = csvColuna(header, "pavimento", "pavimentom2", "aream2", "area");
   const itens: Trecho[] = [];
   const erros: ImportErro[] = [];
   const vistos = new Set<string>();
   for (const r of rows) {
     if (itens.length >= MAX_TRECHOS) { erros.push({ linha: r.linha, mensagem: `Limite de ${MAX_TRECHOS} trechos atingido.` }); break; }
     const id = (iid >= 0 && r.cells[iid]) || `T${String(itens.length + 1).padStart(3, "0")}`;
-    const num = (i: number) => (i >= 0 && r.cells[i] ? brNum(r.cells[i]!) : undefined);
+    const num = (i: number) => (i >= 0 && r.cells[i] ? csvNum(r.cells[i]!) : undefined);
     const t = cleanTrecho({ id, rua: r.cells[ir], nome: r.cells[in_], larguraPistaM: num(il), passeioM: num(ip), pavimentoM2: num(ia) });
     if (!t) { erros.push({ linha: r.linha, mensagem: "Rua ou trecho em branco." }); continue; }
     if (vistos.has(t.id)) { erros.push({ linha: r.linha, mensagem: `Trecho ${t.id} repetido.` }); continue; }

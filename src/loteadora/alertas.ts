@@ -8,7 +8,10 @@ import type { LoteadoraState } from "./state";
 import { diariosFaltando } from "./campo";
 import { prazoRnc } from "./qualidade";
 import { prazoBoletim, rotuloBoletim } from "./medicao";
-import { indicadoresComerciais, prazoReserva, statusReserva } from "./comercial";
+import { indicadoresComerciais, prazoReserva, statusReserva, vgvReferencia } from "./comercial";
+import { diasDeChuvaPendentes, FRENTE_OBRA_LABEL } from "./campo";
+import { quinzenaAFechar } from "./fechamento";
+import { statusPlantio } from "./plantio";
 import { CERTIDAO_LABEL, homologacao, pranchasObsoletas } from "./suprimentos";
 
 /** Matriz de alertas escalonados (documento, 6.1): o mesmo cálculo para o painel e para os avisos. */
@@ -51,7 +54,7 @@ export interface EntradaAlertas {
   /** Pagamentos realizados por atividade (R$). */
   realizadoPorAtividade?: Readonly<Record<string, number>>;
   /** Atividades com atraso (dias úteis) em relação à linha de base. */
-  atrasos?: readonly { atividade: string; dias: number }[];
+  atrasos?: readonly { atividade: string; dias: number; id?: string }[];
   calendario?: WorkCalendar;
   /** Hora local do canteiro ("AAAA-MM-DDTHH:MM"), para o diário das 17h30. Sem ela, usa `agora` em UTC-3. */
   agoraLocal?: string;
@@ -93,7 +96,7 @@ export function alertasLoteadora(s: LoteadoraState, e: EntradaAlertas): Alerta[]
     }
   }
   if (s.etapas.length > 0) {
-    const r = compararReforecast(s.etapas, s.reforecasts, e.realizadoPorAtividade ?? {}, s.vgv, s.metaMargem);
+    const r = compararReforecast(s.etapas, s.reforecasts, e.realizadoPorAtividade ?? {}, vgvReferencia(s.lotes, s.comercial, s.vgv).valor, s.metaMargem);
     for (const l of r.linhas) {
       if (l.nivel !== "verde") add(l.nivel, "custos", "cfo", `Reforecast ${l.etapa.nome}`, `Desvio de ${(l.desvio! * 100).toFixed(1).replace(".", ",")}% sobre o orçado.`);
     }
@@ -137,6 +140,24 @@ export function alertasLoteadora(s: LoteadoraState, e: EntradaAlertas): Alerta[]
     const obs = pranchasObsoletas(c.pranchas, s.pranchas);
     if (obs.length) add("vermelho", "suprimentos", "projetista", `Prancha obsoleta em ${c.id}`, `${obs.map((o) => `${o.codigo} citada na ${o.citada}, vigente ${o.vigente}`).join("; ")}: refaça a requisição antes de contratar.`);
   }
+  // Onda 1 — frentes atrasadas no Gantt, chuva a decidir, fechamento quinzenal, plantio compensatório.
+  const atrasoPorId = new Map((e.atrasos ?? []).filter((a) => a.id).map((a) => [a.id!, a.dias]));
+  for (const f of s.frentes) {
+    if (!f.atividadeId || f.concluidaEm) continue;
+    const dias = atrasoPorId.get(f.atividadeId);
+    if (dias && dias > 0) add(dias > 10 ? "vermelho" : "amarelo", "canteiro", "canteiro", `Trecho ${f.trechoId} · ${FRENTE_OBRA_LABEL[f.frente].slice(4)}`, `Atividade do cronograma ${dias} dia(s) útil(eis) atrasada em relação à linha de base.`);
+  }
+  const chuva = diasDeChuvaPendentes(s.diarios, s.chuvaDecisoes, cal, s.limiteChuvaMm ?? 10);
+  if (chuva.length) add("amarelo", "cronograma", "diretoria_tecnica", "Dias de chuva a decidir", `${chuva.length} dia(s) útil(eis) de chuva no diário ainda não viraram dia não útil nem foram recusados: ${chuva.slice(-5).map(dataBr).join(", ")}.`);
+  if (s.boletins.length || s.fechamentos.length) {
+    const q = quinzenaAFechar(s.fechamentos, e.hoje);
+    if (q) add(q.nivel, "medicoes", "diretoria_tecnica", "Fechamento quinzenal", q.mensagem);
+  }
+  for (const pl of s.plantios) {
+    const st = statusPlantio(pl, e.hoje);
+    add(st.nivel, "regulatorio", "ambiental", `Plantio compensatório ${pl.id}`, st.mensagem);
+  }
+
   // Fase 3 — comercial.
   const com = s.comercial;
   for (const r of com.reservas) {

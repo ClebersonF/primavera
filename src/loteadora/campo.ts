@@ -54,9 +54,22 @@ export interface ItemChecklist {
   em?: string;
 }
 
+/** Ordem de serviço da frente no trecho (F4.05): contrato assinado, ART de execução e integração SST. */
+export interface OrdemServico {
+  fornecedorId: string;
+  contratoNumero: string;
+  contratoAssinadoEm: string;
+  artNumero: string;
+  emitidaEm: string;
+  por: string;
+}
+
 export interface FrenteTrecho {
   trechoId: string;
   frente: FrenteObra;
+  /** Atividade do cronograma que executa esta frente no trecho (o atraso do Gantt aparece no gate). */
+  atividadeId?: string;
+  os?: OrdemServico;
   /** 0..100, do diário de obra (o maior avanço informado). */
   percent: number;
   iniciadaEm?: string;
@@ -81,8 +94,18 @@ export function cleanFrenteTrecho(v: unknown): FrenteTrecho | null {
   const f: FrenteTrecho = { trechoId, frente: v.frente as FrenteObra, percent: Math.round(v.percent * 10) / 10, checklist };
   if (isIsoDate(v.iniciadaEm)) f.iniciadaEm = v.iniciadaEm;
   if (isIsoDate(v.concluidaEm)) f.concluidaEm = v.concluidaEm;
+  const at = optText(v.atividadeId, 60);
+  if (at) f.atividadeId = at;
+  if (isObj(v.os)) {
+    const o = v.os;
+    const forn = text(o.fornecedorId, 40), num = text(o.contratoNumero, 60), art = text(o.artNumero, 60), por = text(o.por, 100);
+    if (forn && num && art && por && isIsoDate(o.contratoAssinadoEm) && isIsoDate(o.emitidaEm)) f.os = { fornecedorId: forn, contratoNumero: num, contratoAssinadoEm: o.contratoAssinadoEm, artNumero: art, emitidaEm: o.emitidaEm, por };
+  }
   return f;
 }
+
+/** Frentes executadas por terceiros: precisam de OS antes de começar (a TVO é da própria loteadora). */
+export const exigeOS = (f: FrenteObra) => f !== "tvo";
 
 export const frenteConcluida = (f: FrenteTrecho | undefined) => !!f?.concluidaEm;
 
@@ -108,6 +131,7 @@ export function gate(lista: readonly FrenteTrecho[], trechoId: string, frente: F
   if (atual?.concluidaEm) return { situacao: "concluida", travas: [] };
   const travas = PRE_REQUISITOS[frente].filter((p) => !frenteConcluida(frenteDe(lista, trechoId, p))).map((p) => `${FRENTE_OBRA_LABEL[p].slice(4)} não concluída`);
   if (frente === "tvo" && rncAbertasNoTrecho > 0) travas.push(`${rncAbertasNoTrecho} RNC aberta(s) no trecho`);
+  if (!atual?.iniciadaEm && exigeOS(frente) && !atual?.os) travas.push("Sem OS emitida (contrato, ART e integração de SST)");
   if (atual?.iniciadaEm) return { situacao: "em_execucao", travas };
   return { situacao: travas.length ? "bloqueada" : "liberada", travas };
 }
@@ -135,6 +159,21 @@ export function marcarChecklist(lista: readonly FrenteTrecho[], trechoId: string
   if (!base.checklist[indice]) throw new PmoError("Item de checklist inexistente.");
   const checklist = base.checklist.map((c, i) => (i === indice ? (ok ? { item: c.item, ok: true, por: por.trim().slice(0, 100) || "—", em } : { item: c.item, ok: false }) : c));
   return substituir(lista, { ...base, checklist });
+}
+
+/** Liga (ou desliga, com `undefined`) a frente do trecho a uma atividade do cronograma. */
+export function vincularAtividade(lista: readonly FrenteTrecho[], trechoId: string, frente: FrenteObra, atividadeId: string | undefined): FrenteTrecho[] {
+  const base = frenteDe(lista, trechoId, frente) ?? novaFrente(trechoId, frente);
+  const { atividadeId: _a, ...resto } = base;
+  void _a;
+  return substituir(lista, atividadeId ? { ...resto, atividadeId } : resto);
+}
+
+/** Grava a OS já validada (ver `emitirOS` em os.ts). */
+export function gravarOS(lista: readonly FrenteTrecho[], trechoId: string, frente: FrenteObra, os: OrdemServico): FrenteTrecho[] {
+  const base = frenteDe(lista, trechoId, frente) ?? novaFrente(trechoId, frente);
+  if (base.iniciadaEm) throw new PmoError("A frente já começou: a OS é emitida antes do início.");
+  return substituir(lista, { ...base, os });
 }
 
 /** Avanço vindo do diário: guarda o maior percentual informado (o avanço físico não regride). */
@@ -285,4 +324,16 @@ export function aplicarAvancos(frentes: readonly FrenteTrecho[], d: DiarioObra):
   let lista = [...frentes];
   for (const a of d.avancos) lista = registrarAvanco(lista, a.trechoId, a.frente, a.percent);
   return lista;
+}
+
+/* ---------------------------- Chuva no cronograma (3.8) ---------------------------- */
+
+export type DecisaoChuva = "aceito" | "recusado";
+
+/**
+ * Dias de chuva do diário que ainda não viraram dia não útil nem foram recusados pelo gestor.
+ * Só dias úteis contam: chuva num sábado não muda o cronograma.
+ */
+export function diasDeChuvaPendentes(diarios: readonly DiarioObra[], decisoes: Readonly<Record<string, DecisaoChuva>>, cal: WorkCalendar = DEFAULT_CALENDAR, limiteMm = 10): string[] {
+  return diarios.filter((d) => diaDeChuva(d, limiteMm) && isWorkDay(d.data, cal) && !Object.prototype.hasOwnProperty.call(decisoes, d.data)).map((d) => d.data);
 }

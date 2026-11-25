@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
-  EMPTY_LOTEADORA, PmoError, abrirRnc, alertasLoteadora, aplicarAvancos, avancoTrecho, cleanLoteadora, concluirFrente, conferirBoletim,
+  EMPTY_LOTEADORA, PmoError, gravarOS, abrirRnc, alertasLoteadora, aplicarAvancos, avancoTrecho, cleanLoteadora, concluirFrente, conferirBoletim,
   devolverBoletim, diarioNoPrazo, diariosFaltando, enviarBoletim, escolherProposta, gate, homologacao, iniciarFrente, isQuinzena, liberarPagamento,
   liquidoBoletim, marcarChecklist, novaRevisao, novoBoletim, pagarBoletim, pranchasObsoletas, prazoRnc, quinzenaDe, realizadoMedicoes,
   registrarCorrecao, registrarPlano, rncsAbertasNoTrecho, scoreFornecedor, travasConferencia, updateLoteadora, validarCorrecao, valorBoletim,
   type Cotacao, type DiarioObra, type Fornecedor, type FrenteTrecho, type Prancha,
 } from "../src";
 
+const os = (l: FrenteTrecho[], t: string, f: Parameters<typeof marcarChecklist>[2]) =>
+  gravarOS(l, t, f, { fornecedorId: "F-001", contratoNumero: "CT-1", contratoAssinadoEm: "2026-10-01", artNumero: "ART-1", emitidaEm: "2026-10-02", por: "Fernando" });
 const tudoOk = (l: FrenteTrecho[], t: string, f: Parameters<typeof marcarChecklist>[2]) => {
   let out = l;
   const n = out.find((x) => x.trechoId === t && x.frente === f)!.checklist.length;
@@ -17,24 +19,25 @@ const tudoOk = (l: FrenteTrecho[], t: string, f: Parameters<typeof marcarCheckli
 describe("gates anti-refação por trecho", () => {
   it("só libera a pavimentação com drenagem, água/esgoto e guias concluídas", () => {
     let l: FrenteTrecho[] = [];
-    expect(gate(l, "T1", "terraplenagem").situacao).toBe("liberada");
-    expect(gate(l, "T1", "pavimentacao").travas).toHaveLength(3);
-    expect(() => iniciarFrente(l, "T1", "drenagem", "2026-11-01")).toThrow(/Trava anti-refação/);
-    l = iniciarFrente(l, "T1", "terraplenagem", "2026-11-01");
+    expect(gate(l, "T1", "terraplenagem").travas).toEqual(["Sem OS emitida (contrato, ART e integração de SST)"]);
+    expect(gate(os(l, "T1", "terraplenagem"), "T1", "terraplenagem").situacao).toBe("liberada");
+    expect(gate(l, "T1", "pavimentacao").travas).toHaveLength(4);
+    expect(() => iniciarFrente(os(l, "T1", "drenagem"), "T1", "drenagem", "2026-11-01")).toThrow(/Trava anti-refação/);
+    l = iniciarFrente(os(l, "T1", "terraplenagem"), "T1", "terraplenagem", "2026-11-01");
     expect(() => concluirFrente(l, "T1", "terraplenagem", "2026-11-05")).toThrow(/Checklist/);
     l = tudoOk(l, "T1", "terraplenagem");
     l = concluirFrente(l, "T1", "terraplenagem", "2026-11-10");
     for (const f of ["drenagem", "agua_esgoto", "guias"] as const) {
-      l = iniciarFrente(l, "T1", f, "2026-11-11");
+      l = iniciarFrente(os(l, "T1", f), "T1", f, "2026-11-11");
       l = tudoOk(l, "T1", f);
       l = concluirFrente(l, "T1", f, "2026-11-20");
     }
-    expect(gate(l, "T1", "pavimentacao").situacao).toBe("liberada");
+    expect(gate(os(l, "T1", "pavimentacao"), "T1", "pavimentacao").situacao).toBe("liberada");
     expect(gate(l, "T2", "pavimentacao").situacao).toBe("bloqueada");
     expect(avancoTrecho(l, "T1")).toBe(50);
   });
   it("TVO e conclusão travam com RNC aberta no trecho", () => {
-    let l = iniciarFrente([], "T1", "terraplenagem", "2026-11-01");
+    let l = iniciarFrente(os([], "T1", "terraplenagem"), "T1", "terraplenagem", "2026-11-01");
     l = tudoOk(l, "T1", "terraplenagem");
     expect(() => concluirFrente(l, "T1", "terraplenagem", "2026-11-10", 1)).toThrow(/RNC/);
     expect(gate([], "T1", "tvo", 2).travas.at(-1)).toMatch(/2 RNC/);
@@ -54,7 +57,7 @@ describe("diário de obra", () => {
     expect(diariosFaltando(ds, "2026-11-20", "2026-11-25T18:00")).toEqual(["2026-11-20", "2026-11-24", "2026-11-25"]);
   });
   it("avanço do diário só vale em frente iniciada e não regride", () => {
-    let l = iniciarFrente([], "T1", "terraplenagem", "2026-11-01");
+    let l = iniciarFrente(os([], "T1", "terraplenagem"), "T1", "terraplenagem", "2026-11-01");
     l = aplicarAvancos(l, d("2026-11-02", "x", { avancos: [{ trechoId: "T1", frente: "terraplenagem", percent: 40 }] }));
     l = aplicarAvancos(l, d("2026-11-03", "x", { avancos: [{ trechoId: "T1", frente: "terraplenagem", percent: 30 }] }));
     expect(l[0]!.percent).toBe(40);

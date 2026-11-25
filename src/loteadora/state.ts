@@ -8,6 +8,9 @@ import { cleanDiario, cleanFrenteTrecho, MAX_DIARIOS, MAX_FRENTES_TRECHO, MAX_MI
 import { cleanRnc, MAX_RNCS, type Rnc } from "./qualidade";
 import { cleanBoletim, MAX_BOLETINS, type Boletim } from "./medicao";
 import { cleanComercial, type Comercial } from "./comercial";
+import { cleanFechamento, MAX_FECHAMENTOS, periodoBloqueadoAte, violacaoFechamento, type Fechamento } from "./fechamento";
+import { cleanPlantio, MAX_PLANTIOS, type Plantio } from "./plantio";
+import type { DecisaoChuva } from "./campo";
 import { cleanCotacao, cleanFornecedor, cleanPrancha, MAX_COTACOES, MAX_FORNECEDORES, MAX_PRANCHAS, type Cotacao, type Fornecedor, type Prancha } from "./suprimentos";
 
 /** Tudo o que a Loteadora 360º guarda por obra, dentro do planejamento da obra. */
@@ -42,9 +45,14 @@ export interface LoteadoraState {
   retencaoPct?: number;
   /* Fase 3 — comercial. */
   comercial: Comercial;
+  /* Onda 1 — fechamento quinzenal, chuva no cronograma e plantio compensatório. */
+  fechamentos: Fechamento[];
+  /** Dia de chuva → aceito (virou dia não útil no calendário da obra) ou recusado. */
+  chuvaDecisoes: Record<string, DecisaoChuva>;
+  plantios: Plantio[];
 }
 
-export const EMPTY_LOTEADORA: LoteadoraState = Object.freeze({ ficha: {}, trechos: [], lotes: [], processos: [], equipe: [], solicitacoes: [], etapas: [], reforecasts: [], frentes: [], diarios: [], rncs: [], boletins: [], fornecedores: [], cotacoes: [], pranchas: [], comercial: { reservas: [], propostas: [], vendas: [] } }) as LoteadoraState;
+export const EMPTY_LOTEADORA: LoteadoraState = Object.freeze({ ficha: {}, trechos: [], lotes: [], processos: [], equipe: [], solicitacoes: [], etapas: [], reforecasts: [], frentes: [], diarios: [], rncs: [], boletins: [], fornecedores: [], cotacoes: [], pranchas: [], comercial: { reservas: [], propostas: [], vendas: [] }, fechamentos: [], chuvaDecisoes: {}, plantios: [] }) as LoteadoraState;
 
 function uniqueBy<T extends { id: string }>(list: T[], max: number): T[] {
   return uniqueKey(list, (x) => x.id, max);
@@ -84,6 +92,9 @@ export function cleanLoteadora(v: unknown): LoteadoraState | null {
     fornecedores: uniqueBy(arr(v.fornecedores).flatMap((t) => cleanFornecedor(t) ?? []), MAX_FORNECEDORES),
     cotacoes: uniqueBy(arr(v.cotacoes).flatMap((t) => cleanCotacao(t) ?? []), MAX_COTACOES),
     comercial: cleanComercial(v.comercial),
+    fechamentos: uniqueKey(arr(v.fechamentos).flatMap((t) => cleanFechamento(t) ?? []), (f) => f.quinzena, MAX_FECHAMENTOS).sort((a, b) => a.quinzena.localeCompare(b.quinzena)),
+    chuvaDecisoes: {},
+    plantios: uniqueBy(arr(v.plantios).flatMap((t) => cleanPlantio(t) ?? []), MAX_PLANTIOS),
     pranchas: uniqueKey(arr(v.pranchas).flatMap((t) => cleanPrancha(t) ?? []), (p) => p.codigo, MAX_PRANCHAS),
   };
   // Frentes: uma por trecho e frente.
@@ -94,6 +105,7 @@ export function cleanLoteadora(v: unknown): LoteadoraState | null {
   for (const d of s.diarios) for (const f of d.fotos) if (f.miniatura) mini++;
   if (mini > MAX_MINIATURAS_OBRA) return null;
   if (isIsoDate(v.inicioDiario)) s.inicioDiario = v.inicioDiario;
+  if (isObj(v.chuvaDecisoes)) for (const [d, x] of Object.entries(v.chuvaDecisoes)) if (isIsoDate(d) && (x === "aceito" || x === "recusado")) s.chuvaDecisoes[d] = x;
   if (nonNeg(v.limiteChuvaMm) && v.limiteChuvaMm > 0 && v.limiteChuvaMm <= 500) s.limiteChuvaMm = v.limiteChuvaMm;
   if (nonNeg(v.retencaoPct) && v.retencaoPct <= 30) s.retencaoPct = v.retencaoPct;
   const meses = new Set<string>();
@@ -122,8 +134,12 @@ export function updateLoteadora(atual: LoteadoraState | undefined, muda: (s: Lot
   const next = muda(base);
   const clean = cleanLoteadora(next);
   if (!clean) throw new PmoError(`Dados da loteadora inválidos (miniaturas de foto acima de ${MAX_MINIATURAS_OBRA} por obra?).`);
-  const contar = (x: LoteadoraState) => [x.trechos.length, x.lotes.length, x.processos.length, x.equipe.length, x.solicitacoes.length, x.etapas.length, x.reforecasts.length, x.cartorio ? 1 : 0, x.frentes.length, x.diarios.length, x.rncs.length, x.boletins.length, x.fornecedores.length, x.cotacoes.length, x.pranchas.length, x.comercial.reservas.length, x.comercial.propostas.length, x.comercial.vendas.length, x.comercial.tabela ? 1 : 0].join(",");
+  const contar = (x: LoteadoraState) => [x.trechos.length, x.lotes.length, x.processos.length, x.equipe.length, x.solicitacoes.length, x.etapas.length, x.reforecasts.length, x.cartorio ? 1 : 0, x.frentes.length, x.diarios.length, x.rncs.length, x.boletins.length, x.fornecedores.length, x.cotacoes.length, x.pranchas.length, x.comercial.reservas.length, x.comercial.propostas.length, x.comercial.vendas.length, x.comercial.tabela ? 1 : 0, x.fechamentos.length, x.plantios.length, Object.keys(x.chuvaDecisoes).length].join(",");
   if (contar(clean) !== contar(next)) throw new PmoError("Algum item ficou inválido ou repetido (id em dobro, data ou valor fora do formato). Nada foi gravado.");
+  // Período fechado (fechamento quinzenal): o que está nele não muda mais.
+  const v = violacaoFechamento(periodoBloqueadoAte(base.fechamentos), base, clean);
+  if (v) throw new PmoError(v);
+  if (clean.fechamentos.length < base.fechamentos.length || base.fechamentos.some((f) => !clean.fechamentos.some((g) => g.quinzena === f.quinzena))) throw new PmoError("Fechamentos não podem ser desfeitos.");
   return clean;
 }
 
@@ -169,6 +185,9 @@ export function describeLoteadoraChange(prev: LoteadoraState | undefined, next: 
   if (cb.propostas.length > ca.propostas.length) out.push(`Proposta ${cb.propostas.at(-1)!.id} do lote ${cb.propostas.at(-1)!.loteId}`);
   if (cb.vendas.length > ca.vendas.length) out.push(`Compromisso de compra e venda ${cb.vendas.at(-1)!.id} do lote ${cb.vendas.at(-1)!.loteId}`);
   else if (!same(ca, cb)) out.push("Comercial atualizado");
+  if ((b.fechamentos?.length ?? 0) > (a.fechamentos?.length ?? 0)) out.push(`Quinzena de ${b.fechamentos.at(-1)!.quinzena} fechada por ${b.fechamentos.at(-1)!.por}`);
+  if (!same(a.plantios, b.plantios)) out.push(`Plantio compensatório: ${b.plantios?.length ?? 0} TCRA(s)`);
+  if (!same(a.chuvaDecisoes, b.chuvaDecisoes)) out.push("Dias de chuva decididos");
   if (b.reforecasts.length > a.reforecasts.length) out.push(`Reforecast de ${b.reforecasts.at(-1)!.mes} congelado por ${b.reforecasts.at(-1)!.por}`);
   return out;
 }

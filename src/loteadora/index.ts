@@ -11,3 +11,6 @@ export * from "./medicao";
 export * from "./suprimentos";
 export * from "./comercial";
 export * from "./painel";
+export * from "./os";
+export * from "./fechamento";
+export * from "./plantio";

@@ -2,7 +2,7 @@ import { alertasLoteadora, nivelGeral, type Alerta, type EntradaAlertas } from "
 import type { Papel } from "./alcadas";
 import { statusSolicitacao } from "./alcadas";
 import { avancoTrecho } from "./campo";
-import { indicadoresComerciais } from "./comercial";
+import { indicadoresComerciais, vgvReferencia } from "./comercial";
 import type { Nivel } from "./common";
 import { indiceRefacao, rncAberta } from "./qualidade";
 import { compararReforecast } from "./reforecast";
@@ -35,7 +35,7 @@ export function resumoEmpreendimento(s: LoteadoraState, e: EntradaAlertas): Resu
   const alertas = alertasLoteadora(s, e);
   const cart = s.cartorio && !s.cartorio.registradoEm ? relogioCartorio(s.cartorio, e.hoje, s.parametros ?? PARAMETROS_PADRAO, e.calendario) : null;
   const ind = indicadoresComerciais(s.lotes, s.comercial, e.hoje, e.agora);
-  const custos = s.etapas.length ? compararReforecast(s.etapas, s.reforecasts, e.realizadoPorAtividade ?? {}, s.vgv, s.metaMargem) : null;
+  const custos = s.etapas.length ? compararReforecast(s.etapas, s.reforecasts, e.realizadoPorAtividade ?? {}, vgvReferencia(s.lotes, s.comercial, s.vgv).valor, s.metaMargem) : null;
   return {
     nivel: nivelGeral(alertas),
     alertas: alertas.length,
@@ -80,7 +80,7 @@ export function kpisPerfil(perfil: Perfil, s: LoteadoraState, e: EntradaAlertas 
   const filtro = PAPEIS_DO_PERFIL[perfil];
   const alertas = filtro === "todos" ? todos : todos.filter((a) => a.papeis.some((p) => filtro.includes(p)));
   const ind = indicadoresComerciais(s.lotes, s.comercial, e.hoje, e.agora);
-  const custos = s.etapas.length ? compararReforecast(s.etapas, s.reforecasts, e.realizadoPorAtividade ?? {}, s.vgv, s.metaMargem) : null;
+  const custos = s.etapas.length ? compararReforecast(s.etapas, s.reforecasts, e.realizadoPorAtividade ?? {}, vgvReferencia(s.lotes, s.comercial, s.vgv).valor, s.metaMargem) : null;
   const nivelIdx = (v: number | null | undefined): Nivel => (v === null || v === undefined ? "verde" : v >= 0.95 ? "verde" : v >= 0.9 ? "amarelo" : "vermelho");
   const cartorio: Kpi = { rotulo: "Prazo caducal do cartório", valor: r.saldoCartorio === null ? (s.cartorio?.registradoEm ? "Registrado" : "—") : `${r.saldoCartorio} dias`, nivel: r.saldoCartorio === null ? "verde" : r.saldoCartorio <= 60 ? "critico" : r.saldoCartorio <= 90 ? "vermelho" : r.saldoCartorio <= 150 ? "amarelo" : "verde", dica: "Meta: registro até D+120" };
   const idp: Kpi = { rotulo: "IDP (prazo)", valor: e.idp ? e.idp.toFixed(2).replace(".", ",") : "—", nivel: nivelIdx(e.idp), dica: "Meta ≥ 0,95" };

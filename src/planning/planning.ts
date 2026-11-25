@@ -1,4 +1,5 @@
 import { cleanLoteadora, describeLoteadoraChange, EMPTY_LOTEADORA, updateLoteadora, type LoteadoraState } from "../loteadora/state";
+import type { DecisaoChuva } from "../loteadora/campo";
 import { validateDeliveryCommitment, type DeliveryCommitment } from "../delivery/delivery";
 import { ALLOCATION_CURVES, type AllocationCurve } from "../resources/profile";
 import { normalizeProgramPath } from "../portfolio/programs";
@@ -1630,6 +1631,16 @@ export function withLoteadora(p: WorkPlanning, muda: (s: LoteadoraState) => Lote
   const next = updateLoteadora(p.loteadora, muda);
   if (sameJson(next, p.loteadora ?? EMPTY_LOTEADORA)) return p;
   return bump(p, { loteadora: next });
+}
+
+/**
+ * Decide um dia de chuva do diário (3.8): aceito vira dia não útil no calendário da obra (o CPM recalcula);
+ * recusado só fica registrado. As duas coisas vão na mesma gravação.
+ */
+export function withDiaDeChuva(p: WorkPlanning, data: string, decisao: DecisaoChuva): WorkPlanning {
+  if (!validDate(data)) throw new PmoError("Data do dia de chuva inválida.");
+  const comDecisao = withLoteadora(p, (s) => ({ ...s, chuvaDecisoes: { ...s.chuvaDecisoes, [data]: decisao } }));
+  return decisao === "aceito" ? withHolidays(comDecisao, [...comDecisao.holidays, data]) : comDecisao;
 }
 
 /** Define (ou limpa, com `undefined`) o tipo de empreendimento. */

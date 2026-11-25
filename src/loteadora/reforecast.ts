@@ -1,3 +1,4 @@
+import { csvColuna, csvFold, csvNum, csvTabela } from "./cadastro";
 import { DEFAULT_CALENDAR, isWorkDay, type WorkCalendar } from "../cpm/calendar";
 import { PmoError } from "../errors";
 import { addDays, isObj, nonNeg, optText, text, type Nivel } from "./common";
@@ -135,4 +136,34 @@ export function compararReforecast(
 export function nextEtapaId(list: readonly { id: string }[]): string {
   const n = list.reduce((m, p) => Math.max(m, Number(/^ET-(\d+)$/.exec(p.id)?.[1] ?? 0)), 0);
   return `ET-${String(n + 1).padStart(2, "0")}`;
+}
+
+/**
+ * Orçamento base por planilha (CSV com ; ou ,): etapa; orcado; atividades.
+ * Atividades separadas por "|" e reconhecidas pelo id ou pelo nome no cronograma (sem acento e caixa).
+ */
+export function importEtapasCsv(csv: string, atividades: readonly { id: string; nome: string }[]): { itens: EtapaOrcamento[]; erros: { linha: number; mensagem: string }[] } {
+  const { header, rows } = csvTabela(csv);
+  const ie = csvColuna(header, "etapa", "nome", "descricao"), io = csvColuna(header, "orcado", "orcamento", "valor", "orcador", "orcadors", "valorr"), ia = csvColuna(header, "atividades", "atividade");
+  if (ie < 0 || io < 0) throw new PmoError("A planilha precisa das colunas etapa e orçado.");
+  const porNome = new Map(atividades.map((a) => [csvFold(a.nome), a.id]));
+  const ids = new Set(atividades.map((a) => a.id));
+  const itens: EtapaOrcamento[] = [];
+  const erros: { linha: number; mensagem: string }[] = [];
+  for (const r of rows) {
+    const nome = (r.cells[ie] ?? "").trim();
+    const orcado = csvNum(r.cells[io] ?? "");
+    if (!nome) { erros.push({ linha: r.linha, mensagem: "etapa em branco" }); continue; }
+    if (!Number.isFinite(orcado) || orcado < 0) { erros.push({ linha: r.linha, mensagem: `orçado inválido em "${nome}"` }); continue; }
+    const refs = ia >= 0 ? (r.cells[ia] ?? "").split("|").map((x) => x.trim()).filter(Boolean) : [];
+    const ligadas: string[] = [];
+    for (const ref of refs) {
+      const id = ids.has(ref) ? ref : porNome.get(csvFold(ref));
+      if (id) ligadas.push(id);
+      else erros.push({ linha: r.linha, mensagem: `atividade "${ref}" não encontrada no cronograma (etapa importada sem ela)` });
+    }
+    if (itens.length >= MAX_ETAPAS) { erros.push({ linha: r.linha, mensagem: `limite de ${MAX_ETAPAS} etapas` }); break; }
+    itens.push({ id: `ET-${String(itens.length + 1).padStart(2, "0")}`, nome: nome.slice(0, 120), orcado: Math.round(orcado * 100) / 100, atividades: [...new Set(ligadas)] });
+  }
+  return { itens, erros };
 }

@@ -493,3 +493,16 @@ export function fluxoIntegrado(entradas: readonly MovimentoCaixa[], saidas: read
   });
   return meses ? out.slice(0, meses) : out;
 }
+
+/**
+ * VGV para a margem (5.6): com tabela publicada, o vendido de fato mais o estoque (todos os demais lotes) pelo preço de tabela;
+ * sem tabela, o VGV de referência informado em Custos.
+ */
+export function vgvReferencia(lotes: readonly Lote[], c: Comercial, vgvManual?: number): { valor: number | undefined; fonte: "vendas" | "referencia" | "nenhum" } {
+  if (c.tabela && lotes.length) {
+    const vendidos = new Map(c.vendas.filter(vendaAtiva).map((v) => [v.loteId, v.valor]));
+    const valor = lotes.reduce((s, l) => s + (vendidos.has(l.id) ? vendidos.get(l.id)! : precoTabela(l, c.tabela!)), 0);
+    return { valor: r2(valor), fonte: "vendas" };
+  }
+  return vgvManual && vgvManual > 0 ? { valor: vgvManual, fonte: "referencia" } : { valor: undefined, fonte: "nenhum" };
+}
