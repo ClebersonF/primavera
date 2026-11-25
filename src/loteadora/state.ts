@@ -7,6 +7,7 @@ import { isIsoDate, isObj, nonNeg } from "./common";
 import { cleanDiario, cleanFrenteTrecho, MAX_DIARIOS, MAX_FRENTES_TRECHO, MAX_MINIATURAS_OBRA, type DiarioObra, type FrenteTrecho } from "./campo";
 import { cleanRnc, MAX_RNCS, type Rnc } from "./qualidade";
 import { cleanBoletim, MAX_BOLETINS, type Boletim } from "./medicao";
+import { cleanComercial, type Comercial } from "./comercial";
 import { cleanCotacao, cleanFornecedor, cleanPrancha, MAX_COTACOES, MAX_FORNECEDORES, MAX_PRANCHAS, type Cotacao, type Fornecedor, type Prancha } from "./suprimentos";
 
 /** Tudo o que a Loteadora 360º guarda por obra, dentro do planejamento da obra. */
@@ -39,9 +40,11 @@ export interface LoteadoraState {
   limiteChuvaMm?: number;
   /** Retenção técnica padrão das medições (%); padrão 5. */
   retencaoPct?: number;
+  /* Fase 3 — comercial. */
+  comercial: Comercial;
 }
 
-export const EMPTY_LOTEADORA: LoteadoraState = Object.freeze({ ficha: {}, trechos: [], lotes: [], processos: [], equipe: [], solicitacoes: [], etapas: [], reforecasts: [], frentes: [], diarios: [], rncs: [], boletins: [], fornecedores: [], cotacoes: [], pranchas: [] }) as LoteadoraState;
+export const EMPTY_LOTEADORA: LoteadoraState = Object.freeze({ ficha: {}, trechos: [], lotes: [], processos: [], equipe: [], solicitacoes: [], etapas: [], reforecasts: [], frentes: [], diarios: [], rncs: [], boletins: [], fornecedores: [], cotacoes: [], pranchas: [], comercial: { reservas: [], propostas: [], vendas: [] } }) as LoteadoraState;
 
 function uniqueBy<T extends { id: string }>(list: T[], max: number): T[] {
   return uniqueKey(list, (x) => x.id, max);
@@ -80,6 +83,7 @@ export function cleanLoteadora(v: unknown): LoteadoraState | null {
     boletins: uniqueBy(arr(v.boletins).flatMap((t) => cleanBoletim(t) ?? []), MAX_BOLETINS),
     fornecedores: uniqueBy(arr(v.fornecedores).flatMap((t) => cleanFornecedor(t) ?? []), MAX_FORNECEDORES),
     cotacoes: uniqueBy(arr(v.cotacoes).flatMap((t) => cleanCotacao(t) ?? []), MAX_COTACOES),
+    comercial: cleanComercial(v.comercial),
     pranchas: uniqueKey(arr(v.pranchas).flatMap((t) => cleanPrancha(t) ?? []), (p) => p.codigo, MAX_PRANCHAS),
   };
   // Frentes: uma por trecho e frente.
@@ -118,7 +122,7 @@ export function updateLoteadora(atual: LoteadoraState | undefined, muda: (s: Lot
   const next = muda(base);
   const clean = cleanLoteadora(next);
   if (!clean) throw new PmoError(`Dados da loteadora inválidos (miniaturas de foto acima de ${MAX_MINIATURAS_OBRA} por obra?).`);
-  const contar = (x: LoteadoraState) => [x.trechos.length, x.lotes.length, x.processos.length, x.equipe.length, x.solicitacoes.length, x.etapas.length, x.reforecasts.length, x.cartorio ? 1 : 0, x.frentes.length, x.diarios.length, x.rncs.length, x.boletins.length, x.fornecedores.length, x.cotacoes.length, x.pranchas.length].join(",");
+  const contar = (x: LoteadoraState) => [x.trechos.length, x.lotes.length, x.processos.length, x.equipe.length, x.solicitacoes.length, x.etapas.length, x.reforecasts.length, x.cartorio ? 1 : 0, x.frentes.length, x.diarios.length, x.rncs.length, x.boletins.length, x.fornecedores.length, x.cotacoes.length, x.pranchas.length, x.comercial.reservas.length, x.comercial.propostas.length, x.comercial.vendas.length, x.comercial.tabela ? 1 : 0].join(",");
   if (contar(clean) !== contar(next)) throw new PmoError("Algum item ficou inválido ou repetido (id em dobro, data ou valor fora do formato). Nada foi gravado.");
   return clean;
 }
@@ -159,6 +163,12 @@ export function describeLoteadoraChange(prev: LoteadoraState | undefined, next: 
   diff("cotacoes", "Cotações");
   diff("pranchas", "Pranchas");
   if (a.inicioDiario !== b.inicioDiario || a.limiteChuvaMm !== b.limiteChuvaMm || a.retencaoPct !== b.retencaoPct) out.push("Parâmetros de campo alterados");
+  const ca = a.comercial ?? { reservas: [], propostas: [], vendas: [] }, cb = b.comercial ?? { reservas: [], propostas: [], vendas: [] };
+  if (!same(ca.tabela, cb.tabela)) out.push(cb.tabela ? `Tabela de vendas publicada em ${cb.tabela.publicadaEm} por ${cb.tabela.publicadaPor}` : "Tabela de vendas removida");
+  if (cb.reservas.length > ca.reservas.length) out.push(`Reserva ${cb.reservas.at(-1)!.id} do lote ${cb.reservas.at(-1)!.loteId}`);
+  if (cb.propostas.length > ca.propostas.length) out.push(`Proposta ${cb.propostas.at(-1)!.id} do lote ${cb.propostas.at(-1)!.loteId}`);
+  if (cb.vendas.length > ca.vendas.length) out.push(`Compromisso de compra e venda ${cb.vendas.at(-1)!.id} do lote ${cb.vendas.at(-1)!.loteId}`);
+  else if (!same(ca, cb)) out.push("Comercial atualizado");
   if (b.reforecasts.length > a.reforecasts.length) out.push(`Reforecast de ${b.reforecasts.at(-1)!.mes} congelado por ${b.reforecasts.at(-1)!.por}`);
   return out;
 }

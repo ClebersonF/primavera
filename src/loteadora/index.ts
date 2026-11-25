@@ -9,3 +9,5 @@ export * from "./campo";
 export * from "./qualidade";
 export * from "./medicao";
 export * from "./suprimentos";
+export * from "./comercial";
+export * from "./painel";

@@ -8,11 +8,13 @@ import type { LoteadoraState } from "./state";
 import { diariosFaltando } from "./campo";
 import { prazoRnc } from "./qualidade";
 import { prazoBoletim, rotuloBoletim } from "./medicao";
+import { indicadoresComerciais, prazoReserva, statusReserva } from "./comercial";
 import { CERTIDAO_LABEL, homologacao, pranchasObsoletas } from "./suprimentos";
 
 /** Matriz de alertas escalonados (documento, 6.1): o mesmo cálculo para o painel e para os avisos. */
 
 export type AreaAlerta = "regulatorio" | "cartorio" | "alcadas" | "custos" | "comercial" | "cronograma" | "canteiro" | "qualidade" | "medicoes" | "suprimentos";
+
 export interface Alerta {
   nivel: Exclude<Nivel, "verde">;
   area: AreaAlerta;
@@ -134,6 +136,22 @@ export function alertasLoteadora(s: LoteadoraState, e: EntradaAlertas): Alerta[]
   for (const c of s.cotacoes) {
     const obs = pranchasObsoletas(c.pranchas, s.pranchas);
     if (obs.length) add("vermelho", "suprimentos", "projetista", `Prancha obsoleta em ${c.id}`, `${obs.map((o) => `${o.codigo} citada na ${o.citada}, vigente ${o.vigente}`).join("; ")}: refaça a requisição antes de contratar.`);
+  }
+  // Fase 3 — comercial.
+  const com = s.comercial;
+  for (const r of com.reservas) {
+    if (statusReserva(r, e.agora) !== "ativa") continue;
+    const pr = prazoReserva(r, e.agora);
+    add(pr.nivel, "comercial", "comercial", `Reserva ${r.id}`, pr.mensagem);
+  }
+  for (const p of com.propostas) {
+    if (p.credito || p.desistenciaEm) continue;
+    const h = (Date.parse(e.agora) - Date.parse(p.criadaEm)) / 3_600_000;
+    if (h > 48) add("amarelo", "comercial", "cfo", `Proposta ${p.id} sem análise de crédito`, `Lote ${p.loteId}: aguardando há ${Math.floor(h)} horas.`);
+  }
+  if (com.vendas.length) {
+    const ind = indicadoresComerciais(s.lotes, com, e.hoje, e.agora);
+    if (ind.inadimplencia !== null && ind.inadimplencia > 0.05) add(ind.inadimplencia > 0.1 ? "vermelho" : "amarelo", "comercial", "cfo", "Inadimplência da carteira", `${(ind.inadimplencia * 100).toFixed(1).replace(".", ",")}% do vencido está há mais de 30 dias sem pagamento.`);
   }
 
   return out.sort((x, y) => nivelRank(y.nivel) - nivelRank(x.nivel));
