@@ -79,13 +79,13 @@ export const isPerfilGenerico = (email?: string) => !!email && email.endsWith("@
 
 /** Abas da Loteadora 360º que cada papel vê (quem não tem papel, como a diretoria do app, vê todas). */
 export const ABAS_DO_PAPEL: Record<Papel, readonly string[]> = {
-  presidente: ["painel", "cadastro", "regulatorio", "alcadas", "custos", "canteiro", "qualidade", "medicoes", "suprimentos", "garantias", "comercial", "trilha"],
-  diretoria_tecnica: ["painel", "cadastro", "regulatorio", "alcadas", "custos", "canteiro", "qualidade", "medicoes", "suprimentos", "garantias", "comercial", "trilha"],
-  consultor: ["painel", "cadastro", "regulatorio", "alcadas", "custos", "canteiro", "medicoes", "suprimentos", "garantias", "comercial", "trilha"],
-  ambiental: ["painel", "cadastro", "regulatorio", "alcadas", "canteiro", "qualidade", "garantias", "trilha"],
-  cfo: ["painel", "alcadas", "custos", "medicoes", "suprimentos", "garantias", "comercial", "trilha"],
-  juridico: ["painel", "cadastro", "regulatorio", "alcadas", "suprimentos", "garantias", "comercial", "trilha"],
-  projetista: ["painel", "cadastro", "regulatorio", "canteiro", "qualidade", "medicoes", "suprimentos", "garantias"],
-  canteiro: ["painel", "cadastro", "canteiro", "qualidade", "medicoes", "garantias"],
+  presidente: ["painel", "cadastro", "regulatorio", "alcadas", "custos", "canteiro", "qualidade", "medicoes", "suprimentos", "comercial", "trilha"],
+  diretoria_tecnica: ["painel", "cadastro", "regulatorio", "alcadas", "custos", "canteiro", "qualidade", "medicoes", "suprimentos", "comercial", "trilha"],
+  consultor: ["painel", "cadastro", "regulatorio", "alcadas", "custos", "canteiro", "medicoes", "suprimentos", "comercial", "trilha"],
+  ambiental: ["painel", "cadastro", "regulatorio", "alcadas", "canteiro", "qualidade", "trilha"],
+  cfo: ["painel", "regulatorio", "alcadas", "custos", "medicoes", "suprimentos", "comercial", "trilha"],
+  juridico: ["painel", "cadastro", "regulatorio", "alcadas", "suprimentos", "comercial", "trilha"],
+  projetista: ["painel", "cadastro", "regulatorio", "canteiro", "qualidade", "medicoes", "suprimentos"],
+  canteiro: ["painel", "cadastro", "canteiro", "qualidade", "medicoes", "suprimentos"],
   comercial: ["painel", "cadastro", "comercial"],
 };
