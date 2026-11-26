@@ -22,3 +22,4 @@ export * from "./relatorio";
 export * from "./offline";
 export * from "./seed-nova-marina";
 export * from "./garantias";
+export * from "./registros";
