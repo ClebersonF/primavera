@@ -1,6 +1,7 @@
 import { workDaysBetween, type WorkCalendar, DEFAULT_CALENDAR } from "../cpm/calendar";
 import { PmoError } from "../errors";
 import { addDays, addYears, daysBetween, isIsoDate, isObj, optText, text, type Nivel } from "./common";
+import { csvColuna, csvFold, csvTabela } from "./cadastro";
 
 /**
  * Módulo 2 — Radar Regulatório. Prazos do Documento Operacional da Sol Maior (v1.0), como PARÂMETROS editáveis:
@@ -71,7 +72,23 @@ export interface RiscoLicenciamento {
   responsavel?: string;
   revisadoEm: string;
   encerrado?: boolean;
+  /** Categoria do risco (validação v2). */
+  categoria?: CategoriaRisco;
+  /** Quem validou o plano de mitigação (gestão regulatória e engenharia). */
+  validadoPor?: string;
 }
+
+export const CATEGORIAS_RISCO = ["prazo_orgao", "exigencia_tecnica", "ambiental", "fundiario_juridico", "projeto", "custo_taxas", "outro"] as const;
+export type CategoriaRisco = (typeof CATEGORIAS_RISCO)[number];
+export const CATEGORIA_RISCO_LABEL: Record<CategoriaRisco, string> = {
+  prazo_orgao: "Prazo do órgão",
+  exigencia_tecnica: "Exigência técnica (RET)",
+  ambiental: "Ambiental (APP, fauna, flora, compensação)",
+  fundiario_juridico: "Fundiário / jurídico",
+  projeto: "Projeto / compatibilização",
+  custo_taxas: "Custo e taxas",
+  outro: "Outro",
+};
 
 export const scoreRisco = (r: RiscoLicenciamento) => r.probabilidade * r.impacto;
 /** Faixa do risco: até 6 baixo, até 14 médio, a partir de 15 alto. */
@@ -87,6 +104,9 @@ function cleanRisco(v: unknown): RiscoLicenciamento | null {
   if (m) r.mitigacao = m;
   const resp = optText(v.responsavel, 100);
   if (resp) r.responsavel = resp;
+  if ((CATEGORIAS_RISCO as readonly unknown[]).includes(v.categoria)) r.categoria = v.categoria as CategoriaRisco;
+  const val = optText(v.validadoPor, 100);
+  if (val) r.validadoPor = val;
   if (v.encerrado === true) r.encerrado = true;
   return r;
 }
@@ -123,6 +143,51 @@ export function travasProtocolo(proc: ProcessoRegulatorio, planoDiretor: "penden
   if (!(proc.riscos ?? []).some((r) => !r.encerrado)) t.push("Matriz de Risco do licenciamento obrigatória antes do protocolo (F2.02)");
   if (planoDiretor !== "conforme") t.push(planoDiretor === "pendente" ? "Análise do Plano Diretor não concluída (F1.02)" : "Projeto não conforme com o Plano Diretor");
   return t;
+}
+
+/**
+ * Importa a Planilha Própria (o mesmo CSV que a exportação gera, ou uma planilha com as colunas frente,
+ * orgao, assunto, protocolo e situacao). Processo existente (mesmo órgão e assunto) recebe protocolo e
+ * situação; os demais entram como novos. Nada é apagado.
+ */
+export function importPlanilhaAcompanhamentoCsv(csv: string, atuais: readonly ProcessoRegulatorio[]): { processos: ProcessoRegulatorio[]; novos: number; atualizados: number; erros: { linha: number; mensagem: string }[] } {
+  const { header, rows } = csvTabela(csv);
+  const io = csvColuna(header, "orgao"), ia = csvColuna(header, "assunto", "objeto"), ifr = csvColuna(header, "frente"), ip = csvColuna(header, "protocolo"), is = csvColuna(header, "situacao", "status");
+  if (io < 0 || ia < 0) throw new PmoError("A planilha precisa das colunas orgao e assunto.");
+  const frenteDe = (t: string): Frente => {
+    const f = csvFold(t);
+    const porRotulo = FRENTES.find((x) => csvFold(x) === f || csvFold(FRENTE_LABEL[x]) === f);
+    if (porRotulo) return porRotulo;
+    const letra: Record<string, Frente> = { a: "municipal", b: "ambiental", c: "saneamento", d: "rodoviario" };
+    if (letra[f]) return letra[f]!;
+    if (/sduh|prefeitura|municip|urban/.test(f)) return "municipal";
+    if (/cetesb|ambient/.test(f)) return "ambiental";
+    if (/daee|sabesp|aguas|saneam/.test(f)) return "saneamento";
+    if (/artesp|rodov|^der/.test(f)) return "rodoviario";
+    return "outro";
+  };
+  const situacaoDe = (t: string): Situacao | undefined => SITUACOES.find((x) => csvFold(x) === csvFold(t) || csvFold(SITUACAO_LABEL[x]) === csvFold(t));
+  let lista = [...atuais];
+  let novos = 0, atualizados = 0;
+  const erros: { linha: number; mensagem: string }[] = [];
+  for (const r of rows) {
+    const orgao = (r.cells[io] ?? "").trim().slice(0, 120), assunto = (r.cells[ia] ?? "").trim().slice(0, 300);
+    if (!orgao || !assunto) { erros.push({ linha: r.linha, mensagem: "órgão ou assunto em branco" }); continue; }
+    const protocolo = ip >= 0 ? (r.cells[ip] ?? "").trim().slice(0, 80) : "";
+    const sitTxt = is >= 0 ? (r.cells[is] ?? "").trim() : "";
+    const situacao = sitTxt ? situacaoDe(sitTxt) : undefined;
+    if (sitTxt && !situacao) erros.push({ linha: r.linha, mensagem: `situação "${sitTxt}" não reconhecida (mantida a atual)` });
+    const i = lista.findIndex((p) => csvFold(p.orgao) === csvFold(orgao) && csvFold(p.assunto) === csvFold(assunto));
+    if (i >= 0) {
+      const p = lista[i]!;
+      const novo = { ...p, ...(protocolo ? { protocolo } : {}), ...(situacao ? { situacao } : {}) };
+      if (JSON.stringify(novo) !== JSON.stringify(p)) { lista[i] = novo; atualizados++; }
+    } else {
+      lista = [...lista, { id: nextProcessoId(lista), frente: ifr >= 0 ? frenteDe(r.cells[ifr] ?? "") : "outro", orgao, assunto, ...(protocolo ? { protocolo } : {}), situacao: situacao ?? (protocolo ? "protocolado" : "em_elaboracao"), eventos: [] }];
+      novos++;
+    }
+  }
+  return { processos: lista, novos, atualizados, erros };
 }
 
 /** Planilha Própria de Acompanhamento (F2.02): uma linha por processo, em CSV (; e decimal brasileiro). */

@@ -13,7 +13,7 @@ import { cleanPlantio, MAX_PLANTIOS, type Plantio } from "./plantio";
 import type { DecisaoChuva } from "./campo";
 import { cleanAviso, MAX_AVISOS, type AvisoEnviado } from "./avisos";
 import { cleanRegistro, eventosDeAlcada, MAX_TRILHA, registrar, trilhaSoInclusao, type Autor, type Carimbo, type RegistroTrilha } from "./trilha";
-import { cleanCaucao, cleanGarantia, MAX_GARANTIAS, type Caucao, type Garantia } from "./garantias";
+import { cleanCaucao, cleanGarantia, cleanLiberacaoRetencao, MAX_GARANTIAS, MAX_LIBERACOES_RETENCAO, type Caucao, type Garantia, type LiberacaoRetencao } from "./garantias";
 import { cleanCotacao, cleanFornecedor, cleanPrancha, MAX_COTACOES, MAX_FORNECEDORES, MAX_PRANCHAS, type Cotacao, type Fornecedor, type Prancha } from "./suprimentos";
 
 /** Tudo o que a Loteadora 360º guarda por obra, dentro do planejamento da obra. */
@@ -61,6 +61,8 @@ export interface LoteadoraState {
   /* v1.1 — garantias de terceiros e caução junto à Prefeitura. */
   garantias: Garantia[];
   caucao?: Caucao;
+  /** Devoluções da retenção técnica aos fornecedores (fundo de retenção). */
+  retencoesLiberadas?: LiberacaoRetencao[];
 }
 
 export const EMPTY_LOTEADORA: LoteadoraState = Object.freeze({ ficha: {}, trechos: [], lotes: [], processos: [], equipe: [], solicitacoes: [], etapas: [], reforecasts: [], frentes: [], diarios: [], rncs: [], boletins: [], fornecedores: [], cotacoes: [], pranchas: [], comercial: { reservas: [], propostas: [], vendas: [] }, fechamentos: [], chuvaDecisoes: {}, plantios: [], trilha: [], avisos: [], garantias: [] }) as LoteadoraState;
@@ -111,6 +113,8 @@ export function cleanLoteadora(v: unknown): LoteadoraState | null {
     pranchas: uniqueKey(arr(v.pranchas).flatMap((t) => cleanPrancha(t) ?? []), (p) => p.codigo, MAX_PRANCHAS),
     garantias: uniqueBy(arr(v.garantias).flatMap((t) => cleanGarantia(t) ?? []), MAX_GARANTIAS),
   };
+  const lib = uniqueBy(arr(v.retencoesLiberadas).flatMap((t) => cleanLiberacaoRetencao(t) ?? []), MAX_LIBERACOES_RETENCAO);
+  if (lib.length) s.retencoesLiberadas = lib;
   const cau = v.caucao === undefined ? undefined : cleanCaucao(v.caucao);
   if (cau) s.caucao = cau;
   // Frentes: uma por trecho e frente.
@@ -164,7 +168,7 @@ export function updateLoteadora(atual: LoteadoraState | undefined, muda: (s: Lot
   }
   const clean = cleanLoteadora(next);
   if (!clean) throw new PmoError(`Dados da loteadora inválidos (miniaturas de foto acima de ${MAX_MINIATURAS_OBRA} por obra?).`);
-  const contar = (x: LoteadoraState) => [x.trechos.length, x.lotes.length, x.processos.length, x.equipe.length, x.solicitacoes.length, x.etapas.length, x.reforecasts.length, x.cartorio ? 1 : 0, x.frentes.length, x.diarios.length, x.rncs.length, x.boletins.length, x.fornecedores.length, x.cotacoes.length, x.pranchas.length, x.comercial.reservas.length, x.comercial.propostas.length, x.comercial.vendas.length, x.comercial.tabela ? 1 : 0, x.fechamentos.length, x.plantios.length, Object.keys(x.chuvaDecisoes).length, x.trilha.length, (x.garantias ?? []).length, x.caucao ? x.caucao.marcos.length + 1 : 0].join(",");
+  const contar = (x: LoteadoraState) => [x.trechos.length, x.lotes.length, x.processos.length, x.equipe.length, x.solicitacoes.length, x.etapas.length, x.reforecasts.length, x.cartorio ? 1 : 0, x.frentes.length, x.diarios.length, x.rncs.length, x.boletins.length, x.fornecedores.length, x.cotacoes.length, x.pranchas.length, x.comercial.reservas.length, x.comercial.propostas.length, x.comercial.vendas.length, x.comercial.tabela ? 1 : 0, x.fechamentos.length, x.plantios.length, Object.keys(x.chuvaDecisoes).length, x.trilha.length, (x.garantias ?? []).length, x.caucao ? x.caucao.marcos.length + 1 : 0, (x.retencoesLiberadas ?? []).length].join(",");
   if (contar(clean) !== contar(next)) throw new PmoError("Algum item ficou inválido ou repetido (id em dobro, data ou valor fora do formato). Nada foi gravado.");
   // Período fechado (fechamento quinzenal): o que está nele não muda mais.
   const v = violacaoFechamento(periodoBloqueadoAte(base.fechamentos), base, clean);
@@ -219,6 +223,10 @@ export function describeLoteadoraChange(prev: LoteadoraState | undefined, next: 
   if (!same(a.plantios, b.plantios)) out.push(`Plantio compensatório: ${b.plantios?.length ?? 0} TCRA(s)`);
   if (!same(a.chuvaDecisoes, b.chuvaDecisoes)) out.push("Dias de chuva decididos");
   if (!same(a.garantias ?? [], b.garantias ?? [])) out.push(`Garantias de terceiros: ${b.garantias?.length ?? 0}`);
+  if ((b.retencoesLiberadas?.length ?? 0) > (a.retencoesLiberadas?.length ?? 0)) {
+    const l = b.retencoesLiberadas!.at(-1)!;
+    out.push(`Retenção técnica de ${l.valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} devolvida ao fornecedor ${l.fornecedorId} por ${l.por}`);
+  }
   if (!same(a.caucao, b.caucao)) out.push(b.caucao ? `Caução junto à Prefeitura (${b.caucao.termo}) atualizada` : "Caução removida");
   if (b.reforecasts.length > a.reforecasts.length) out.push(`Reforecast de ${b.reforecasts.at(-1)!.mes} congelado por ${b.reforecasts.at(-1)!.por}`);
   return out;

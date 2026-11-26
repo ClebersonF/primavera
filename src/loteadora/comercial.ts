@@ -293,10 +293,11 @@ export function ocupacaoLote(c: Comercial, loteId: string, agoraIso: string): { 
 }
 
 /** Situação comercial que o espelho mostra (a partir do comercial, não do campo manual). */
-export function statusEspelho(lote: Lote, c: Comercial, agoraIso: string): Lote["comercial"] {
+export function statusEspelho(lote: Lote, c: Comercial, agoraIso: string, caucao?: Caucao): Lote["comercial"] {
   const oc = ocupacaoLote(c, lote.id, agoraIso);
   if (oc?.tipo === "venda") return "vendido";
   if (oc) return "reservado";
+  if (lote.comercial === "caucionado" || travaCaucao(lote.id, caucao)) return "caucionado";
   return lote.comercial === "bloqueado" ? "bloqueado" : "disponivel";
 }
 
@@ -306,6 +307,7 @@ export function reservar(c: Comercial, lote: Lote, cartorio: Cartorio | undefine
   const tc = travaCaucao(lote.id, caucao);
   if (tc) throw new PmoError(`${tc}.`);
   if (lote.comercial === "bloqueado") throw new PmoError(`Lote ${lote.id} bloqueado para venda.`);
+  if (lote.comercial === "caucionado") throw new PmoError(`Lote ${lote.id} em caução da Prefeitura: venda bloqueada até a liberação.`);
   if (!c.tabela) throw new PmoError("Publique a tabela de vendas antes de reservar.");
   const oc = ocupacaoLote(c, lote.id, agoraIso);
   if (oc) throw new PmoError(`Lote ${lote.id} já está em ${oc.tipo} (${oc.id}).`);
@@ -361,7 +363,7 @@ export function travasContrato(c: Comercial, p: PropostaVenda, x: ContextoContra
   const t: string[] = [];
   const r01 = travaR01(x.lote, x.cartorio);
   if (r01) t.push(r01);
-  const tc = travaCaucao(x.lote.id, x.caucao);
+  const tc = travaCaucao(x.lote.id, x.caucao) ?? (x.lote.comercial === "caucionado" ? `Lote ${x.lote.id} em caução da Prefeitura` : null);
   if (tc) t.push(tc);
   if (!p.chancelaJuridica) t.push("Chancela jurídica pendente (análise documental e minuta)");
   else if (!p.chancelaJuridica.aprovado) t.push("Chancela jurídica negada");
@@ -438,7 +440,7 @@ export function indicadoresComerciais(lotes: readonly Lote[], c: Comercial, hoje
   const mes = hoje.slice(0, 7);
   const vendasMes = ativas.filter((v) => v.assinadoEm.slice(0, 7) === mes).length;
   const vendidosAntes = ativas.filter((v) => v.assinadoEm.slice(0, 7) < mes).length;
-  const vendaveis = lotes.filter((l) => l.comercial !== "bloqueado").length;
+  const vendaveis = lotes.filter((l) => l.comercial !== "bloqueado" && l.comercial !== "caucionado").length;
   const estoqueInicio = vendaveis - vendidosAntes;
   let recebido = 0, vencido = 0, vencido30 = 0, venceu = 0;
   for (const v of ativas) {

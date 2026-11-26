@@ -30,7 +30,12 @@ export interface AnalisePlanoDiretor {
   testadaMinimaM?: number;
   /** Percentual mínimo de áreas públicas (sistema viário + verdes + institucional) sobre a gleba, 0..1. */
   areasPublicasMinPct?: number;
+  /** Taxa de ocupação máxima do lote (0..1) e coeficiente de aproveitamento máximo. */
+  taxaOcupacaoMax?: number;
+  coefAproveitamentoMax?: number;
   restricoes?: string;
+  /** Vistos técnicos da análise (F1.02: engenharia, conselho, gestão regulatória e projetos). */
+  vistos?: { nome: string; em: string }[];
   analisadoPor?: string;
   analisadoEm?: string;
   /** Parecer: o estudo de massa está aderente ao Plano Diretor? */
@@ -52,9 +57,9 @@ export const STATUS_FISICO = ["a_executar", "em_obra", "infra_concluida", "entre
 export type StatusFisico = (typeof STATUS_FISICO)[number];
 export const STATUS_FISICO_LABEL: Record<StatusFisico, string> = { a_executar: "A executar", em_obra: "Em obra", infra_concluida: "Infraestrutura concluída", entregue: "Entregue" };
 
-export const STATUS_COMERCIAL = ["bloqueado", "disponivel", "reservado", "vendido"] as const;
+export const STATUS_COMERCIAL = ["bloqueado", "caucionado", "disponivel", "reservado", "vendido"] as const;
 export type StatusComercial = (typeof STATUS_COMERCIAL)[number];
-export const STATUS_COMERCIAL_LABEL: Record<StatusComercial, string> = { bloqueado: "Bloqueado", disponivel: "Disponível", reservado: "Reservado", vendido: "Vendido" };
+export const STATUS_COMERCIAL_LABEL: Record<StatusComercial, string> = { bloqueado: "Bloqueado", caucionado: "Caução Prefeitura — bloqueado", disponivel: "Disponível", reservado: "Reservado", vendido: "Vendido" };
 
 export interface Lote {
   /** Quadra + número, ex.: "A-12". */
@@ -98,6 +103,17 @@ export function cleanPlanoDiretor(v: unknown): AnalisePlanoDiretor | undefined {
   if (r) p.restricoes = r;
   for (const k of ["loteMinimoM2", "testadaMinimaM"] as const) if (nonNeg(v[k])) p[k] = v[k] as number;
   if (nonNeg(v.areasPublicasMinPct) && v.areasPublicasMinPct <= 1) p.areasPublicasMinPct = v.areasPublicasMinPct;
+  if (nonNeg(v.taxaOcupacaoMax) && v.taxaOcupacaoMax <= 1) p.taxaOcupacaoMax = v.taxaOcupacaoMax;
+  if (nonNeg(v.coefAproveitamentoMax) && v.coefAproveitamentoMax <= 20) p.coefAproveitamentoMax = v.coefAproveitamentoMax;
+  if (Array.isArray(v.vistos)) {
+    const vistos = v.vistos.flatMap((x) => {
+      if (!isObj(x)) return [];
+      const nome = optText(x.nome, 100);
+      return nome && typeof x.em === "string" && /^\d{4}-\d{2}-\d{2}$/.test(x.em) ? [{ nome, em: x.em }] : [];
+    });
+    const unicos = vistos.filter((x, i) => vistos.findIndex((y) => y.nome.toLowerCase() === x.nome.toLowerCase()) === i).slice(0, 12);
+    if (unicos.length) p.vistos = unicos;
+  }
   if (typeof v.analisadoEm === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v.analisadoEm)) p.analisadoEm = v.analisadoEm;
   if (typeof v.conforme === "boolean") p.conforme = v.conforme;
   return Object.keys(p).length ? p : undefined;

@@ -2,6 +2,7 @@ import type { Decisao, Solicitacao } from "./alcadas";
 import { nextSolicitacaoId } from "./alcadas";
 import { CHECKLIST_PADRAO, type FrenteObra, type FrenteTrecho } from "./campo";
 import type { LoteadoraState } from "./state";
+import { nextProcessoId } from "./regulatorio";
 
 /**
  * Dados do piloto Nova Marina: quadro de áreas, VGV e breakeven (Plano de Implementação Sol Maior) e, da
@@ -158,5 +159,117 @@ export function aplicarSeedNovaMarina(s: LoteadoraState, agoraIso: string, por: 
     incluidos.push(`${faltam.length} aprovação(ões) pendente(s)`);
   } else mantidos.push("aprovações do piloto");
 
+  return { estado: e, incluidos, mantidos };
+}
+
+/**
+ * Correções da validação técnica (Release v2, Pendências 1 e 2): valores oficiais e titulares
+ * informados pela Sol Maior. Aplicado uma vez sobre a obra já carregada; não apaga nada.
+ */
+export const NOVA_MARINA_V2 = {
+  municipio: "Bragança Paulista",
+  uf: "SP",
+  orcadoBase: 13_511_201.27,
+  reforecast: 14_714_432.68,
+  realizado: 8_404_922.1,
+  processos: [
+    { frente: "outro", orgao: "GRAPROHAB / SDUH", assunto: "Certificado GRAPROHAB (Dec. 66.960/2022)" },
+    { frente: "municipal", orgao: "Prefeitura de Bragança Paulista", assunto: "Aprovação urbanística, Decreto e termo de caução (Lei 6.766/79)" },
+    { frente: "ambiental", orgao: "CETESB", assunto: "Licenciamento ambiental e TCRA de 6.915 mudas (plantio compensatório)" },
+    { frente: "saneamento", orgao: "SP Águas / DAEE", assunto: "Outorga — lagoa de retenção e drenagem" },
+  ],
+  /** Titulares do Documento Operacional v1.1 (seção 2.1), por papel. A frente comercial fica como perfil. */
+  titulares: [
+    ["presidente", "José Benedito da Cruz Monte"],
+    ["diretoria_tecnica", "José Evaristo dos Santos"],
+    ["consultor", "Luciano da Cruz Monte"],
+    ["ambiental", "Mario Sergio Matsumoto"],
+    ["cfo", "Fernando Henrique da Cruz"],
+    ["juridico", "Dra. Juliana"],
+    ["projetista", "Elvis de Oliveira Santos"],
+    ["canteiro", "Hercules Gomes de Oliveira"],
+  ],
+} as const;
+
+export const ETAPA_AJUSTE_ID = "ET-AJ";
+
+/**
+ * Aplica as correções v2: município, ajuste do orçado à base oficial (linha transparente "a distribuir"),
+ * saldo de implantação do realizado, reforecast oficial congelado no mês anterior, os 4 processos
+ * regulatórios e os titulares da Equipe. `realizadoAtual` é o realizado que o sistema já tem (pagamentos e
+ * medições), para o saldo de implantação completar o oficial sem contar em dobro.
+ */
+export function aplicarCorrecoesNovaMarinaV2(s: LoteadoraState, agoraIso: string, por: string, realizadoAtual = 0): ResultadoSeed {
+  const v2 = NOVA_MARINA_V2;
+  const incluidos: string[] = [];
+  const mantidos: string[] = [];
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  let e: LoteadoraState = { ...s };
+
+  if (!e.ficha.municipio || e.ficha.municipio === "Peruíbe") {
+    e = { ...e, ficha: { ...e.ficha, municipio: v2.municipio, uf: v2.uf } };
+    incluidos.push(`município ${v2.municipio}/${v2.uf}`);
+  } else mantidos.push(`município ${e.ficha.municipio}`);
+
+  if (e.etapas.length && !e.etapas.some((x) => x.id === ETAPA_AJUSTE_ID)) {
+    const soma = r2(e.etapas.reduce((t, x) => t + x.orcado, 0));
+    const falta = r2(v2.orcadoBase - soma);
+    const saldo = r2(Math.max(0, v2.realizado - realizadoAtual));
+    if (falta > 0 || saldo > 0) {
+      e = {
+        ...e,
+        etapas: [
+          ...e.etapas,
+          {
+            id: ETAPA_AJUSTE_ID,
+            nome: "Ajuste à base oficial Sol Maior (a distribuir por disciplina)",
+            orcado: Math.max(0, falta),
+            atividades: [],
+            ...(saldo > 0 ? { realizadoAnterior: saldo, fonteRealizadoAnterior: "Realizado acumulado informado pela Sol Maior (validação v2)" } : {}),
+          },
+        ],
+      };
+      incluidos.push(`ajuste do orçado à base oficial (+${falta.toLocaleString("pt-BR", { minimumFractionDigits: 2 })})`);
+      if (saldo > 0) incluidos.push(`saldo de implantação do realizado (${saldo.toLocaleString("pt-BR", { minimumFractionDigits: 2 })})`);
+    }
+  } else mantidos.push("orçamento (ajuste já aplicado ou sem disciplinas)");
+
+  if (!e.reforecasts.length && e.etapas.length) {
+    const d = new Date(agoraIso);
+    const mesAnterior = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - 1, 1)).toISOString().slice(0, 7);
+    const totalOrcado = r2(e.etapas.reduce((t, x) => t + x.orcado, 0));
+    const valores: Record<string, number> = Object.fromEntries(e.etapas.map((x) => [x.id, x.orcado]));
+    const aj = e.etapas.find((x) => x.id === ETAPA_AJUSTE_ID);
+    if (aj) valores[aj.id] = r2(aj.orcado + (v2.reforecast - totalOrcado));
+    e = { ...e, reforecasts: [{ mes: mesAnterior, congeladoEm: agoraIso, por, valores, nota: "Reforecast oficial informado pela Sol Maior (total R$ 14.714.432,68); distribuição por disciplina a detalhar." }] };
+    incluidos.push(`reforecast oficial congelado em ${mesAnterior}`);
+  } else mantidos.push("reforecast");
+
+  const chave = (o: string, a: string) => `${o}|${a}`.toLowerCase();
+  const existentes = new Set(e.processos.map((p) => chave(p.orgao, p.assunto)));
+  const novosProc = v2.processos.filter((p) => !existentes.has(chave(p.orgao, p.assunto)));
+  if (novosProc.length) {
+    const lista = [...e.processos];
+    for (const p of novosProc) lista.push({ id: nextProcessoId(lista), frente: p.frente, orgao: p.orgao, assunto: p.assunto, situacao: "em_elaboracao", eventos: [] });
+    e = { ...e, processos: lista };
+    incluidos.push(`${novosProc.length} processo(s) regulatório(s)`);
+  } else mantidos.push("processos regulatórios");
+
+  const equipe = [...e.equipe];
+  let titulares = 0;
+  for (const [papel, nome] of v2.titulares) {
+    const i = equipe.findIndex((m) => m.papel === papel);
+    if (i < 0) {
+      equipe.push({ id: `tit-${papel}`, nome, papel });
+      titulares++;
+    } else if (/perfil gen[eé]rico/i.test(equipe[i]!.nome)) {
+      equipe[i] = { ...equipe[i]!, nome };
+      titulares++;
+    }
+  }
+  if (titulares) {
+    e = { ...e, equipe };
+    incluidos.push(`${titulares} titular(es) na Equipe`);
+  } else mantidos.push("Equipe");
   return { estado: e, incluidos, mantidos };
 }

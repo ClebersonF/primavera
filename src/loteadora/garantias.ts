@@ -173,6 +173,14 @@ export interface MarcoCaucao {
   /** Lotes liberados nesse marco (quando a caução é em lotes). */
   lotes: string[];
   valor?: number;
+  /** Gatilho físico (validação v2): frente de obra e avanço mínimo (%) nos trechos do marco (ou na obra). */
+  frente?: FrenteObra;
+  avancoMinPct?: number;
+  trechos?: string[];
+  /** Termo de Vistoria Parcial da Prefeitura e validação do Jurídico: os dois são exigidos para liberar. */
+  termoVistoriaParcial?: string;
+  validadoJuridicoPor?: string;
+  validadoJuridicoEm?: string;
 }
 
 export interface Caucao {
@@ -206,6 +214,17 @@ export function cleanCaucao(v: unknown): Caucao | undefined {
     const r: MarcoCaucao = { id, descricao, previstoEm: m.previstoEm, lotes: ids(m.lotes) };
     if (isIsoDate(m.liberadoEm)) r.liberadoEm = m.liberadoEm;
     if (nonNeg(m.valor)) r.valor = m.valor;
+    if ((FRENTES_OBRA as readonly unknown[]).includes(m.frente)) r.frente = m.frente as FrenteObra;
+    if (nonNeg(m.avancoMinPct) && m.avancoMinPct <= 100) r.avancoMinPct = m.avancoMinPct;
+    const tr = ids(m.trechos);
+    if (tr.length) r.trechos = tr;
+    const tv = optText(m.termoVistoriaParcial, 120);
+    if (tv) r.termoVistoriaParcial = tv;
+    const vj = optText(m.validadoJuridicoPor, 100);
+    if (vj && isIsoDate(m.validadoJuridicoEm)) {
+      r.validadoJuridicoPor = vj;
+      r.validadoJuridicoEm = m.validadoJuridicoEm;
+    }
     return [r];
   }).slice(0, 50);
   return c;
@@ -223,11 +242,49 @@ export function travaCaucao(loteId: string, c?: Caucao): string | null {
   return lotesCaucionados(c).has(loteId) ? `Lote ${loteId} em caução municipal (termo ${c!.termo}): venda bloqueada até a liberação` : null;
 }
 
-export function liberarMarco(c: Caucao, marcoId: string, em: string): Caucao {
+/** Avanço médio (%) da frente nos trechos do marco (ou em todos os trechos com a frente cadastrada). */
+export function avancoDoMarco(m: MarcoCaucao, frentes: readonly FrenteTrecho[]): number | null {
+  if (!m.frente) return null;
+  const lista = frentes.filter((f) => f.frente === m.frente && (!m.trechos?.length || m.trechos.includes(f.trechoId)));
+  const base = m.trechos?.length ? m.trechos.length : lista.length;
+  if (!base) return 0;
+  return Math.round((lista.reduce((s, f) => s + (f.concluidaEm ? 100 : f.percent), 0) / base) * 10) / 10;
+}
+
+/**
+ * O que falta para liberar o marco (F3.05, validação v2): avanço físico da frente, Termo de Vistoria
+ * Parcial da Prefeitura e validação do Jurídico.
+ */
+export function travasLiberacaoMarco(m: MarcoCaucao, frentes: readonly FrenteTrecho[]): string[] {
+  const t: string[] = [];
+  if (m.frente) {
+    const av = avancoDoMarco(m, frentes) ?? 0;
+    const min = m.avancoMinPct ?? 100;
+    if (av < min) t.push(`${FRENTE_OBRA_LABEL[m.frente].slice(4)} em ${String(av).replace(".", ",")}% (mínimo ${min}%)`);
+  }
+  if (!m.termoVistoriaParcial) t.push("Termo de Vistoria Parcial da Prefeitura não registrado");
+  if (!m.validadoJuridicoPor) t.push("Validação do Jurídico pendente");
+  return t;
+}
+
+/** Jurídico valida o marco (documentação da liberação conferida). */
+export function validarMarcoJuridico(c: Caucao, marcoId: string, por: string, em: string): Caucao {
+  const m = c.marcos.find((x) => x.id === marcoId);
+  if (!m || m.liberadoEm) throw new PmoError("Marco inexistente ou já liberado.");
+  if (!isIsoDate(em) || !por.trim()) throw new PmoError("Informe quem validou e a data.");
+  return { ...c, marcos: c.marcos.map((x) => (x.id === marcoId ? { ...x, validadoJuridicoPor: por.trim().slice(0, 100), validadoJuridicoEm: em } : x)) };
+}
+
+/** Libera o marco: lotes saem de "caucionado" para "disponível". Com `frentes`, exige as travas do marco. */
+export function liberarMarco(c: Caucao, marcoId: string, em: string, frentes?: readonly FrenteTrecho[]): Caucao {
   const m = c.marcos.find((x) => x.id === marcoId);
   if (!m) throw new PmoError("Marco de caução inexistente.");
   if (m.liberadoEm) throw new PmoError("Marco já liberado.");
   if (!isIsoDate(em)) throw new PmoError("Data de liberação inválida.");
+  if (frentes) {
+    const t = travasLiberacaoMarco(m, frentes);
+    if (t.length) throw new PmoError(`Liberação travada: ${t.join("; ")}.`);
+  }
   return { ...c, marcos: c.marcos.map((x) => (x.id === marcoId ? { ...x, liberadoEm: em } : x)) };
 }
 
@@ -243,3 +300,77 @@ export function situacaoCaucao(c: Caucao | undefined, hoje: string): { presos: n
 
 export const nextMarcoId = (c: Caucao) => `MC-${String(c.marcos.length + 1).padStart(2, "0")}`;
 export const proximoMarco = (c: Caucao, hoje: string) => c.marcos.filter((m) => !m.liberadoEm).sort((a, b) => a.previstoEm.localeCompare(b.previstoEm)).find((m) => m.previstoEm >= addDays(hoje, -3650));
+
+/* ---------------------------------------------------------------------------
+ * Fundo de retenção técnica por fornecedor (validação v2, Pendência 7).
+ * ------------------------------------------------------------------------- */
+
+export interface LiberacaoRetencao {
+  id: string;
+  fornecedorId: string;
+  valor: number;
+  em: string;
+  por: string;
+}
+
+export const MAX_LIBERACOES_RETENCAO = 500;
+
+export function cleanLiberacaoRetencao(v: unknown): LiberacaoRetencao | null {
+  if (!isObj(v)) return null;
+  const id = text(v.id, 20), fornecedorId = text(v.fornecedorId, 40), por = text(v.por, 100);
+  if (!id || !fornecedorId || !por || !nonNeg(v.valor) || v.valor <= 0 || !isIsoDate(v.em)) return null;
+  return { id, fornecedorId, valor: v.valor, em: v.em, por };
+}
+
+export interface FundoFornecedor {
+  fornecedorId: string;
+  nome: string;
+  retido: number;
+  liberado: number;
+  saldo: number;
+  /** Garantias do fornecedor (vigência). */
+  garantias: Garantia[];
+  /** O que impede liberar o saldo: RNC aberta ou garantia acionada. */
+  travas: string[];
+}
+
+/**
+ * Quadro "Garantias de Terceiros e Fundo de Retenção": retenção acumulada nos boletins com liberação
+ * financeira, o que já foi devolvido e as travas (RNC aberta do fornecedor ou garantia acionada).
+ */
+export function fundoRetencao(
+  fornecedores: readonly { id: string; nome: string }[],
+  boletins: readonly { fornecedorId: string; retido: number }[],
+  liberacoes: readonly LiberacaoRetencao[],
+  garantias: readonly Garantia[],
+  rncsAbertas: readonly { id: string; fornecedorId?: string }[],
+): FundoFornecedor[] {
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  return fornecedores
+    .map((f) => {
+      const retido = r2(boletins.filter((b) => b.fornecedorId === f.id).reduce((s, b) => s + b.retido, 0));
+      const liberado = r2(liberacoes.filter((l) => l.fornecedorId === f.id).reduce((s, l) => s + l.valor, 0));
+      const gs = garantias.filter((g) => g.fornecedorId === f.id || g.fornecedor.toLowerCase() === f.nome.toLowerCase());
+      const travas: string[] = [];
+      const rncs = rncsAbertas.filter((r) => r.fornecedorId === f.id);
+      if (rncs.length) travas.push(`${rncs.length} RNC aberta(s): ${rncs.map((r) => r.id).join(", ")}`);
+      const ac = retencaoTravada(gs, f.nome) ?? retencaoTravada(gs, f.id);
+      if (ac) travas.push(ac);
+      return { fornecedorId: f.id, nome: f.nome, retido, liberado, saldo: r2(retido - liberado), garantias: gs, travas };
+    })
+    .filter((x) => x.retido > 0 || x.garantias.length > 0);
+}
+
+export function liberarRetencao(
+  lista: readonly LiberacaoRetencao[],
+  fundo: FundoFornecedor,
+  valor: number,
+  por: string,
+  em: string,
+): LiberacaoRetencao[] {
+  if (fundo.travas.length) throw new PmoError(`Retenção travada: ${fundo.travas.join("; ")}.`);
+  if (!(valor > 0) || valor > fundo.saldo + 0.005) throw new PmoError("Valor acima do saldo retido do fornecedor.");
+  if (!isIsoDate(em)) throw new PmoError("Data inválida.");
+  const n = lista.reduce((m, l) => Math.max(m, Number(l.id.replace(/\D/g, "")) || 0), 0) + 1;
+  return [...lista, { id: `LR-${String(n).padStart(3, "0")}`, fornecedorId: fundo.fornecedorId, valor: Math.round(valor * 100) / 100, em, por: por.trim().slice(0, 100) || "—" }];
+}

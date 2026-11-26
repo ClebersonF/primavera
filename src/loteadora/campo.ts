@@ -253,6 +253,8 @@ export interface DiarioObra {
   por: string;
   /** v1.1 — os 5 vetores de campo (3.1/3.2): impacto do dia em cada um. A chuva também vem do clima/pluviometria. */
   vetores?: Partial<Record<VetorCampo, OcorrenciaVetor>>;
+  /** Efetivo previsto para o dia (vetor 5: previsto × real). */
+  efetivoPrevisto?: number;
 }
 
 /** 5 vetores de campo do comitê semanal e do diário (documento v1.1, 3.1 e 3.2). */
@@ -270,8 +272,31 @@ export type ImpactoVetor = (typeof IMPACTOS)[number];
 export const IMPACTO_LABEL: Record<ImpactoVetor, string> = { nenhum: "Sem impacto", parcial: "Impacto parcial", paralisou: "Paralisou a frente" };
 export interface OcorrenciaVetor {
   impacto: ImpactoVetor;
+  /** Situação estruturada do vetor (validação v2): intempérie, suprimento ou equipamento. */
+  tipo?: string;
   obs?: string;
 }
+
+/** Situações estruturadas por vetor (a chuva vem do clima e da pluviometria; o pessoal, do efetivo previsto × real). */
+export const TIPOS_VETOR = {
+  intemperie: ["nenhuma", "solo_saturado", "vento_forte", "alagamento", "interdicao"],
+  material: ["normal", "entrega_parcial", "atraso", "falta_critica"],
+  equipamento: ["operante", "manutencao", "quebra_parada"],
+} as const satisfies Partial<Record<VetorCampo, readonly string[]>>;
+export type VetorComTipo = keyof typeof TIPOS_VETOR;
+export const TIPO_VETOR_LABEL: Record<string, string> = {
+  nenhuma: "Nenhuma", solo_saturado: "Solo saturado", vento_forte: "Vento forte", alagamento: "Alagamento", interdicao: "Interdição",
+  normal: "Normal", entrega_parcial: "Entrega parcial", atraso: "Atraso", falta_critica: "Falta crítica",
+  operante: "Operante", manutencao: "Em manutenção", quebra_parada: "Quebra / parada",
+};
+/** Impacto sugerido pela situação (a pessoa pode ajustar no diário). */
+export const IMPACTO_DO_TIPO: Record<string, ImpactoVetor> = {
+  nenhuma: "nenhum", solo_saturado: "parcial", vento_forte: "parcial", alagamento: "paralisou", interdicao: "paralisou",
+  normal: "nenhum", entrega_parcial: "parcial", atraso: "parcial", falta_critica: "paralisou",
+  operante: "nenhum", manutencao: "parcial", quebra_parada: "paralisou",
+};
+const tipoValido = (vetor: VetorCampo, t: unknown): t is string =>
+  vetor in TIPOS_VETOR && (TIPOS_VETOR[vetor as VetorComTipo] as readonly unknown[]).includes(t);
 
 export const MAX_DIARIOS = 1500;
 export const MAX_FOTOS_DIARIO = 12;
@@ -322,11 +347,12 @@ export function cleanDiario(v: unknown): DiarioObra | null {
       const o = v.vetores[k];
       if (isObj(o) && (IMPACTOS as readonly unknown[]).includes(o.impacto)) {
         const obs = optText(o.obs, 300);
-        vet[k] = { impacto: o.impacto as ImpactoVetor, ...(obs ? { obs } : {}) };
+        vet[k] = { impacto: o.impacto as ImpactoVetor, ...(tipoValido(k, o.tipo) ? { tipo: o.tipo } : {}), ...(obs ? { obs } : {}) };
       }
     }
     if (Object.keys(vet).length) d.vetores = vet;
   }
+  if (nonNeg(v.efetivoPrevisto) && Number.isInteger(v.efetivoPrevisto) && v.efetivoPrevisto <= 5000) d.efetivoPrevisto = v.efetivoPrevisto;
   return d;
 }
 
@@ -335,6 +361,8 @@ export function impactoVetor(d: DiarioObra, vetor: VetorCampo, limiteMm = 10): I
   const r = d.vetores?.[vetor]?.impacto;
   if (r) return r;
   if (vetor === "chuva") return diaDeChuva(d, limiteMm) ? "paralisou" : d.clima === "chuva" || d.chuvaMm > 0 ? "parcial" : "nenhum";
+  // Pessoal sem registro explícito: efetivo real abaixo do previsto. Menos da metade conta como paralisação.
+  if (vetor === "pessoal" && d.efetivoPrevisto) return d.efetivo >= d.efetivoPrevisto ? "nenhum" : d.efetivo < d.efetivoPrevisto / 2 ? "paralisou" : "parcial";
   return "nenhum";
 }
 

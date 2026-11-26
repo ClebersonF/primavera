@@ -16,6 +16,10 @@ export interface EtapaOrcamento {
   orcado: number;
   /** Atividades do cronograma da etapa: o realizado soma os pagamentos feitos nelas. */
   atividades: string[];
+  /** Saldo de implantação: realizado anterior ao sistema (R$), informado e somado ao realizado da etapa. */
+  realizadoAnterior?: number;
+  /** De onde veio o saldo de implantação (ex.: "Fechamento Sol Maior até 10/2026"). */
+  fonteRealizadoAnterior?: string;
 }
 
 export interface SnapshotReforecast {
@@ -37,7 +41,13 @@ export function cleanEtapa(v: unknown): EtapaOrcamento | null {
   const id = text(v.id, 40), nome = text(v.nome, 120);
   if (!id || !nome || !nonNeg(v.orcado)) return null;
   const atividades = (Array.isArray(v.atividades) ? v.atividades : []).filter((a): a is string => typeof a === "string" && a.length > 0 && a.length <= 60).slice(0, 300);
-  return { id, nome, orcado: v.orcado, atividades: [...new Set(atividades)] };
+  const e: EtapaOrcamento = { id, nome, orcado: v.orcado, atividades: [...new Set(atividades)] };
+  if (nonNeg(v.realizadoAnterior) && v.realizadoAnterior > 0) {
+    e.realizadoAnterior = v.realizadoAnterior;
+    const f = optText(v.fonteRealizadoAnterior, 200);
+    if (f) e.fonteRealizadoAnterior = f;
+  }
+  return e;
 }
 
 export function cleanSnapshot(v: unknown): SnapshotReforecast | null {
@@ -118,7 +128,7 @@ export function compararReforecast(
   const ultimo = snapshots.at(-1) ?? null;
   const linhas = etapas.map((etapa): LinhaReforecast => {
     const reforecast = ultimo && Object.prototype.hasOwnProperty.call(ultimo.valores, etapa.id) ? ultimo.valores[etapa.id]! : etapa.orcado;
-    const realizado = r2(etapa.atividades.reduce((s, a) => s + (Object.prototype.hasOwnProperty.call(realizadoPorAtividade, a) ? realizadoPorAtividade[a]! : 0), 0));
+    const realizado = r2((etapa.realizadoAnterior ?? 0) + etapa.atividades.reduce((s, a) => s + (Object.prototype.hasOwnProperty.call(realizadoPorAtividade, a) ? realizadoPorAtividade[a]! : 0), 0));
     const desvio = etapa.orcado > 0 ? (reforecast - etapa.orcado) / etapa.orcado : null;
     return { etapa, orcado: etapa.orcado, reforecast, realizado, desvio, nivel: nivelDesvio(desvio), consumido: reforecast > 0 ? realizado / reforecast : null };
   });
