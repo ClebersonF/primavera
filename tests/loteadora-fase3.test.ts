@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  EMPTY_LOTEADORA, alertasLoteadora, analisarCredito, assinarContrato, baixarEntrada, baixarParcela, cancelarReserva, entregarLote,
+  EMPTY_LOTEADORA, alertasLoteadora, analisarCredito, chancelarJuridico, assinarContrato, baixarEntrada, baixarParcela, cancelarReserva, entregarLote,
   excecoesTabela, fluxoIntegrado, gerarParcelas, indicadoresComerciais, isValidCpf, ocupacaoLote, parcelaPrice, precoTabela, proporFromReserva,
   recebiveis, reservar, statusEspelho, statusReserva, travaR01, travasContrato, updateLoteadora, type Comercial, type Lote, type TabelaVendas,
 } from "../src";
@@ -46,8 +46,10 @@ describe("reserva → proposta → contrato → entrega", () => {
     c = proporFromReserva(c, "RS-0001", l, { valor: 280_000, entrada: 28_000, parcelas: 12 }, "X", "2026-11-25T15:00:00Z");
     const p = c.propostas[0]!;
     expect(statusEspelho(l, c, "2026-12-30T00:00:00Z")).toBe("reservado");
-    expect(travasContrato(c, p, { lote: l, cartorio, excecaoAprovada: false })).toEqual(["Análise de crédito pendente", "Exceção de tabela sem aprovação da Presidência"]);
+    expect(travasContrato(c, p, { lote: l, cartorio, excecaoAprovada: false })).toEqual(["Chancela jurídica pendente (análise documental e minuta)", "Análise de crédito pendente", "Exceção de tabela sem aprovação da Presidência"]);
     c = analisarCredito(c, p.id, true, "Fernando", "2026-11-26T10:00:00Z");
+    expect(() => assinarContrato(c, p.id, { lote: l, cartorio, excecaoAprovada: true }, "2026-11-30")).toThrow(/Chancela jurídica/);
+    c = chancelarJuridico(c, p.id, true, "Jurídico", "2026-11-26T11:00:00Z");
     c = assinarContrato(c, p.id, { lote: l, cartorio, excecaoAprovada: true }, "2026-11-30");
     const v = c.vendas[0]!;
     expect(v.parcelas).toHaveLength(12);
@@ -68,6 +70,7 @@ describe("indicadores, fluxo e estado", () => {
     let c = reservar(vazio, lotes[0]!, cartorio, { doc: CPF, nome: "Ana" }, "X", "2026-09-01T12:00:00Z");
     c = proporFromReserva(c, "RS-0001", lotes[0]!, { valor: 300_000, entrada: 30_000, parcelas: 3 }, "X", "2026-09-01T13:00:00Z");
     c = analisarCredito(c, "PP-0001", true, "F", "2026-09-02T10:00:00Z");
+    c = chancelarJuridico(c, "PP-0001", true, "J", "2026-09-02T11:00:00Z");
     c = assinarContrato(c, "PP-0001", { lote: lotes[0]!, cartorio, excecaoAprovada: false }, "2026-09-05");
     c = baixarEntrada(c, "CV-0001", "2026-09-05");
     c = baixarParcela(c, "CV-0001", 0, "2026-10-05");

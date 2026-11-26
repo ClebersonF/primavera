@@ -16,8 +16,9 @@ describe("SHA-256", () => {
 });
 
 describe("RACI e perfis genéricos", () => {
-  it("8 papéis, um perfil genérico por papel, RACI dos 10 macroprocessos", () => {
-    expect(PAPEIS).toHaveLength(8);
+  it("9 papéis (com o Jurídico), um perfil genérico por papel, RACI dos 10 macroprocessos", () => {
+    expect(PAPEIS).toHaveLength(9);
+    expect(PAPEIS).toContain("juridico");
     expect(PERFIS_GENERICOS.map((p) => p.papel)).toEqual([...PAPEIS]);
     expect(MACROPROCESSOS).toHaveLength(10);
     expect(papeisNoMacro("cartorio", "R")).toEqual(["ambiental"]);

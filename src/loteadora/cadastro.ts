@@ -16,6 +16,26 @@ export interface FichaEmpreendimento {
   areaBrutaM2?: number;
   areaCessaoM2?: number;
   areaVendavelM2?: number;
+  /** v1.1 — análise obrigatória do Plano Diretor da cidade (F1.02/F1.03, Módulo 1). */
+  planoDiretor?: AnalisePlanoDiretor;
+}
+
+/** F1.02: Plano Diretor, diretrizes urbanísticas da Prefeitura e restrições ambientais. */
+export interface AnalisePlanoDiretor {
+  /** Lei do Plano Diretor (número/ano) e zona do imóvel. */
+  lei?: string;
+  zoneamento?: string;
+  /** Parâmetros que o projeto precisa cumprir. */
+  loteMinimoM2?: number;
+  testadaMinimaM?: number;
+  /** Percentual mínimo de áreas públicas (sistema viário + verdes + institucional) sobre a gleba, 0..1. */
+  areasPublicasMinPct?: number;
+  restricoes?: string;
+  analisadoPor?: string;
+  analisadoEm?: string;
+  /** Parecer: o estudo de massa está aderente ao Plano Diretor? */
+  conforme?: boolean;
+  validadoPor?: string;
 }
 
 export interface Trecho {
@@ -62,7 +82,47 @@ export function cleanFicha(v: unknown): FichaEmpreendimento | null {
   if (typeof v.uf === "string" && /^[A-Z]{2}$/.test(v.uf)) f.uf = v.uf;
   if (typeof v.cnpjSpe === "string" && /^\d{14}$/.test(v.cnpjSpe)) f.cnpjSpe = v.cnpjSpe;
   for (const k of ["areaBrutaM2", "areaCessaoM2", "areaVendavelM2"] as const) if (nonNeg(v[k])) f[k] = v[k] as number;
+  const pd = cleanPlanoDiretor(v.planoDiretor);
+  if (pd) f.planoDiretor = pd;
   return f;
+}
+
+export function cleanPlanoDiretor(v: unknown): AnalisePlanoDiretor | undefined {
+  if (!isObj(v)) return undefined;
+  const p: AnalisePlanoDiretor = {};
+  for (const k of ["lei", "zoneamento", "analisadoPor", "validadoPor"] as const) {
+    const t = optText(v[k], 120);
+    if (t) p[k] = t;
+  }
+  const r = optText(v.restricoes, 2000);
+  if (r) p.restricoes = r;
+  for (const k of ["loteMinimoM2", "testadaMinimaM"] as const) if (nonNeg(v[k])) p[k] = v[k] as number;
+  if (nonNeg(v.areasPublicasMinPct) && v.areasPublicasMinPct <= 1) p.areasPublicasMinPct = v.areasPublicasMinPct;
+  if (typeof v.analisadoEm === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v.analisadoEm)) p.analisadoEm = v.analisadoEm;
+  if (typeof v.conforme === "boolean") p.conforme = v.conforme;
+  return Object.keys(p).length ? p : undefined;
+}
+
+/**
+ * Trava de conformidade urbanística (v1.1, F1.02/F1.03): sem a análise concluída e conforme, o
+ * empreendimento não segue para protocolo; lotes abaixo do mínimo e áreas públicas abaixo do exigido
+ * aparecem como pendência.
+ */
+export function conformidadePlanoDiretor(f: FichaEmpreendimento, lotes: readonly Lote[] = []): { status: "pendente" | "conforme" | "nao_conforme"; pendencias: string[] } {
+  const pd = f.planoDiretor;
+  const pend: string[] = [];
+  if (!pd?.analisadoEm || pd.conforme === undefined) pend.push("Análise do Plano Diretor não concluída (F1.02)");
+  else if (!pd.conforme) pend.push("Parecer de não conformidade com o Plano Diretor");
+  if (pd?.loteMinimoM2) {
+    const menores = lotes.filter((l) => l.areaM2 < pd.loteMinimoM2!);
+    if (menores.length) pend.push(`${menores.length} lote(s) abaixo do lote mínimo de ${pd.loteMinimoM2} m² (ex.: ${menores.slice(0, 3).map((l) => l.id).join(", ")})`);
+  }
+  if (pd?.areasPublicasMinPct && f.areaBrutaM2 && f.areaCessaoM2 !== undefined) {
+    const pct = f.areaCessaoM2 / f.areaBrutaM2;
+    if (pct + 1e-9 < pd.areasPublicasMinPct) pend.push(`Áreas públicas em ${(pct * 100).toFixed(1).replace(".", ",")}% da gleba; o Plano Diretor exige ${(pd.areasPublicasMinPct * 100).toFixed(1).replace(".", ",")}%`);
+  }
+  const status = !pd?.analisadoEm || pd.conforme === undefined ? "pendente" : pend.length ? "nao_conforme" : "conforme";
+  return { status, pendencias: pend };
 }
 
 export function cleanTrecho(v: unknown): Trecho | null {

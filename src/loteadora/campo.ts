@@ -44,7 +44,7 @@ export const CHECKLIST_PADRAO: Record<FrenteObra, readonly string[]> = {
   eletrica: ["Projeto Energisa aprovado", "Postes, cabos MT/BT e transformadores", "Aterramento no padrão"],
   pavimentacao: ["Subleito de bica corrida 15 cm", "Imprimação CM30", "Capa CBUQ 4 cm", "Ensaios aprovados"],
   calcadas: ["Sinalização CONTRAN", "Berços e tutores do plantio", "Manutenção do plantio programada (24 meses)"],
-  tvo: ["As-built entregue", "Recebimento Prefeitura", "Recebimento SABESP", "Recebimento Energisa", "Recebimento CETESB", "TVO emitido"],
+  tvo: ["As-built entregue", "Recebimento Prefeitura", "Recebimento SABESP", "Recebimento Energisa", "Recebimento CETESB", "Dossiê de garantias de terceiros ativo", "TVO emitido", "Liberação da caução municipal solicitada"],
 };
 
 export interface ItemChecklist {
@@ -126,11 +126,13 @@ export interface Gate {
  * Situação da frente no trecho. A TVO exige, além das 7 frentes, zero RNC aberta no trecho.
  * `rncAbertasNoTrecho` vem do módulo de qualidade.
  */
-export function gate(lista: readonly FrenteTrecho[], trechoId: string, frente: FrenteObra, rncAbertasNoTrecho = 0): Gate {
+export function gate(lista: readonly FrenteTrecho[], trechoId: string, frente: FrenteObra, rncAbertasNoTrecho = 0, pendenciasGarantia: readonly string[] = []): Gate {
   const atual = frenteDe(lista, trechoId, frente);
   if (atual?.concluidaEm) return { situacao: "concluida", travas: [] };
   const travas = PRE_REQUISITOS[frente].filter((p) => !frenteConcluida(frenteDe(lista, trechoId, p))).map((p) => `${FRENTE_OBRA_LABEL[p].slice(4)} não concluída`);
   if (frente === "tvo" && rncAbertasNoTrecho > 0) travas.push(`${rncAbertasNoTrecho} RNC aberta(s) no trecho`);
+  // v1.1, Gate 8: TVO e liberação da caução só com o dossiê de garantias de terceiros ativo.
+  if (frente === "tvo") travas.push(...pendenciasGarantia);
   if (!atual?.iniciadaEm && exigeOS(frente) && !atual?.os) travas.push("Sem OS emitida (contrato, ART e integração de SST)");
   if (atual?.iniciadaEm) return { situacao: "em_execucao", travas };
   return { situacao: travas.length ? "bloqueada" : "liberada", travas };
@@ -144,9 +146,9 @@ function substituir(lista: readonly FrenteTrecho[], f: FrenteTrecho): FrenteTrec
 }
 
 /** Inicia a frente no trecho. Recusa se a trava não foi liberada (é o ponto do anti-refação). */
-export function iniciarFrente(lista: readonly FrenteTrecho[], trechoId: string, frente: FrenteObra, em: string, rncAbertasNoTrecho = 0): FrenteTrecho[] {
+export function iniciarFrente(lista: readonly FrenteTrecho[], trechoId: string, frente: FrenteObra, em: string, rncAbertasNoTrecho = 0, pendenciasGarantia: readonly string[] = []): FrenteTrecho[] {
   if (!isIsoDate(em)) throw new PmoError("Data de início inválida.");
-  const g = gate(lista, trechoId, frente, rncAbertasNoTrecho);
+  const g = gate(lista, trechoId, frente, rncAbertasNoTrecho, pendenciasGarantia);
   if (g.situacao === "concluida" || g.situacao === "em_execucao") throw new PmoError("Essa frente já foi iniciada no trecho.");
   if (g.travas.length) throw new PmoError(`Trava anti-refação: ${g.travas.join("; ")}.`);
   const base = frenteDe(lista, trechoId, frente) ?? novaFrente(trechoId, frente);
@@ -192,7 +194,7 @@ export function registrarAvanco(lista: readonly FrenteTrecho[], trechoId: string
 }
 
 /** Conclui a frente: exige 100% de avanço e o checklist de liberação completo. */
-export function concluirFrente(lista: readonly FrenteTrecho[], trechoId: string, frente: FrenteObra, em: string, rncAbertasNoTrecho = 0): FrenteTrecho[] {
+export function concluirFrente(lista: readonly FrenteTrecho[], trechoId: string, frente: FrenteObra, em: string, rncAbertasNoTrecho = 0, pendenciasGarantia: readonly string[] = []): FrenteTrecho[] {
   if (!isIsoDate(em)) throw new PmoError("Data de conclusão inválida.");
   const base = frenteDe(lista, trechoId, frente);
   if (!base?.iniciadaEm) throw new PmoError("A frente ainda não foi iniciada.");
@@ -201,6 +203,7 @@ export function concluirFrente(lista: readonly FrenteTrecho[], trechoId: string,
   const faltam = base.checklist.filter((c) => !c.ok).map((c) => c.item);
   if (faltam.length) throw new PmoError(`Checklist de liberação incompleto: ${faltam.join("; ")}.`);
   if (rncAbertasNoTrecho > 0) throw new PmoError(`Há ${rncAbertasNoTrecho} RNC aberta(s) no trecho: trate antes de concluir.`);
+  if (frente === "tvo" && pendenciasGarantia.length) throw new PmoError(`Dossiê de garantias incompleto: ${pendenciasGarantia.join("; ")}.`);
   return substituir(lista, { ...base, percent: 100, concluidaEm: em });
 }
 
@@ -248,6 +251,26 @@ export interface DiarioObra {
   /** ISO com hora: para conferir o limite das 17h30. */
   registradoEm: string;
   por: string;
+  /** v1.1 — os 5 vetores de campo (3.1/3.2): impacto do dia em cada um. A chuva também vem do clima/pluviometria. */
+  vetores?: Partial<Record<VetorCampo, OcorrenciaVetor>>;
+}
+
+/** 5 vetores de campo do comitê semanal e do diário (documento v1.1, 3.1 e 3.2). */
+export const VETORES_CAMPO = ["chuva", "intemperie", "material", "equipamento", "pessoal"] as const;
+export type VetorCampo = (typeof VETORES_CAMPO)[number];
+export const VETOR_LABEL: Record<VetorCampo, string> = {
+  chuva: "Chuvas",
+  intemperie: "Outras intempéries",
+  material: "Entrega de material",
+  equipamento: "Funcionamento de equipamentos",
+  pessoal: "Pessoal (efetivo)",
+};
+export const IMPACTOS = ["nenhum", "parcial", "paralisou"] as const;
+export type ImpactoVetor = (typeof IMPACTOS)[number];
+export const IMPACTO_LABEL: Record<ImpactoVetor, string> = { nenhum: "Sem impacto", parcial: "Impacto parcial", paralisou: "Paralisou a frente" };
+export interface OcorrenciaVetor {
+  impacto: ImpactoVetor;
+  obs?: string;
 }
 
 export const MAX_DIARIOS = 1500;
@@ -289,10 +312,52 @@ export function cleanDiario(v: unknown): DiarioObra | null {
     return [{ trechoId, frente: a.frente as FrenteObra, percent: a.percent }];
   });
   const fotos = (Array.isArray(v.fotos) ? v.fotos : []).flatMap((f) => cleanFoto(f) ?? []).slice(0, MAX_FOTOS_DIARIO);
-  return {
+  const d: DiarioObra = {
     data: v.data, efetivo: v.efetivo, equipamentos: optText(v.equipamentos, 500) ?? "", clima: v.clima as Clima, chuvaMm: v.chuvaMm,
     texto: optText(v.texto, 4000) ?? "", avancos, fotos, registradoEm: v.registradoEm, por,
   };
+  if (isObj(v.vetores)) {
+    const vet: Partial<Record<VetorCampo, OcorrenciaVetor>> = {};
+    for (const k of VETORES_CAMPO) {
+      const o = v.vetores[k];
+      if (isObj(o) && (IMPACTOS as readonly unknown[]).includes(o.impacto)) {
+        const obs = optText(o.obs, 300);
+        vet[k] = { impacto: o.impacto as ImpactoVetor, ...(obs ? { obs } : {}) };
+      }
+    }
+    if (Object.keys(vet).length) d.vetores = vet;
+  }
+  return d;
+}
+
+/** Impacto do dia num vetor. A chuva, sem registro explícito, sai do clima e da pluviometria. */
+export function impactoVetor(d: DiarioObra, vetor: VetorCampo, limiteMm = 10): ImpactoVetor {
+  const r = d.vetores?.[vetor]?.impacto;
+  if (r) return r;
+  if (vetor === "chuva") return diaDeChuva(d, limiteMm) ? "paralisou" : d.clima === "chuva" || d.chuvaMm > 0 ? "parcial" : "nenhum";
+  return "nenhum";
+}
+
+export interface ResumoVetor {
+  vetor: VetorCampo;
+  diasComImpacto: number;
+  diasParalisados: number;
+  ultimaObs?: string;
+}
+
+/** Resumo dos 5 vetores no período (para o comitê semanal, o boletim de medição e o alerta de atraso > 7 dias). */
+export function resumoVetores(diarios: readonly DiarioObra[], de: string, ate: string, limiteMm = 10): ResumoVetor[] {
+  const periodo = diarios.filter((d) => d.data >= de && d.data <= ate).sort((a, b) => a.data.localeCompare(b.data));
+  return VETORES_CAMPO.map((vetor) => {
+    let diasComImpacto = 0, diasParalisados = 0, ultimaObs: string | undefined;
+    for (const d of periodo) {
+      const i = impactoVetor(d, vetor, limiteMm);
+      if (i !== "nenhum") diasComImpacto++;
+      if (i === "paralisou") diasParalisados++;
+      if (d.vetores?.[vetor]?.obs) ultimaObs = d.vetores[vetor]!.obs;
+    }
+    return { vetor, diasComImpacto, diasParalisados, ...(ultimaObs ? { ultimaObs } : {}) };
+  });
 }
 
 /** Prazo do diário: até 17h30 do mesmo dia (hora local do canteiro, informada pelo app como ISO com fuso). */

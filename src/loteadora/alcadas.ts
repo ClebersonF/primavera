@@ -8,14 +8,15 @@ import { daysBetween, isIsoDate, isObj, nonNeg, optText, text } from "./common";
  * Toda decisão grava data, pessoa, papel e justificativa. Quem decide é conferido pelo papel na equipe da obra.
  */
 
-export const PAPEIS = ["presidente", "diretoria_tecnica", "consultor", "ambiental", "cfo", "projetista", "canteiro", "comercial"] as const;
+export const PAPEIS = ["presidente", "diretoria_tecnica", "consultor", "ambiental", "cfo", "juridico", "projetista", "canteiro", "comercial"] as const;
 export type Papel = (typeof PAPEIS)[number];
 export const PAPEL_LABEL: Record<Papel, string> = {
   presidente: "Presidência",
-  diretoria_tecnica: "Diretoria técnica (engenharia)",
-  consultor: "Consultoria técnica e orçamento",
-  ambiental: "Gestão ambiental e regulatória",
+  diretoria_tecnica: "Engenharia sênior (diretoria)",
+  consultor: "Engenharia / conselho (orçamento e viabilidade)",
+  ambiental: "Gestão executiva, ambiental e regulatória",
   cfo: "Diretoria financeira (CFO)",
+  juridico: "Jurídico",
   projetista: "Engenharia de projetos",
   canteiro: "Gestão de obras / canteiro",
   comercial: "Comercial / corretores",
@@ -43,10 +44,10 @@ export const TIPO_LABEL: Record<TipoSolicitacao, string> = {
 
 export const ETAPAS = ["pre_aprovacao", "presidencia", "financeiro"] as const;
 export type Etapa = (typeof ETAPAS)[number];
-export const ETAPA_LABEL: Record<Etapa, string> = { pre_aprovacao: "Pré-aprovação técnica", presidencia: "Presidência", financeiro: "Liberação financeira" };
+export const ETAPA_LABEL: Record<Etapa, string> = { pre_aprovacao: "Pré-aprovação diretiva/jurídica", presidencia: "Presidência", financeiro: "Liberação financeira" };
 /** Quem pode decidir em cada etapa (segregação de funções). */
 export const PAPEIS_DA_ETAPA: Record<Etapa, readonly Papel[]> = {
-  pre_aprovacao: ["diretoria_tecnica", "consultor", "ambiental"],
+  pre_aprovacao: ["diretoria_tecnica", "consultor", "ambiental", "juridico"],
   presidencia: ["presidente"],
   financeiro: ["cfo"],
 };

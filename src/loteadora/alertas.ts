@@ -12,11 +12,15 @@ import { indicadoresComerciais, prazoReserva, statusReserva, vgvReferencia } fro
 import { diasDeChuvaPendentes, FRENTE_OBRA_LABEL } from "./campo";
 import { quinzenaAFechar } from "./fechamento";
 import { statusPlantio } from "./plantio";
+import { acionamentoAberto, situacaoCaucao, statusGarantia, vencimentoGarantia } from "./garantias";
+import { conformidadePlanoDiretor } from "./cadastro";
+import { pendenciasMatriz } from "./regulatorio";
+import { resumoVetores, VETOR_LABEL } from "./campo";
 import { CERTIDAO_LABEL, homologacao, pranchasObsoletas } from "./suprimentos";
 
 /** Matriz de alertas escalonados (documento, 6.1): o mesmo cálculo para o painel e para os avisos. */
 
-export type AreaAlerta = "regulatorio" | "cartorio" | "alcadas" | "custos" | "comercial" | "cronograma" | "canteiro" | "qualidade" | "medicoes" | "suprimentos";
+export type AreaAlerta = "regulatorio" | "cartorio" | "garantias" | "alcadas" | "custos" | "comercial" | "cronograma" | "canteiro" | "qualidade" | "medicoes" | "suprimentos";
 
 export interface Alerta {
   nivel: Exclude<Nivel, "verde">;
@@ -30,12 +34,12 @@ export interface Alerta {
   acao: string;
 }
 
-/** Quem recebe cada nível: amarelo, o responsável e a diretoria técnica; vermelho, o corpo diretivo; crítico, Presidência e diretoria. */
+/** Quem recebe cada nível (v1.1): amarelo, o responsável e a diretoria técnica; vermelho, o corpo diretivo e o Jurídico; crítico, também a Presidência. */
 export function papeisDoNivel(nivel: Exclude<Nivel, "verde">, responsavel: Papel): Papel[] {
   const set = new Set<Papel>([responsavel]);
   if (nivel === "amarelo") set.add("diretoria_tecnica");
   else {
-    ["diretoria_tecnica", "ambiental", "cfo"].forEach((p) => set.add(p as Papel));
+    ["diretoria_tecnica", "ambiental", "cfo", "juridico"].forEach((p) => set.add(p as Papel));
     if (nivel === "critico") set.add("presidente");
   }
   return [...set];
@@ -156,6 +160,37 @@ export function alertasLoteadora(s: LoteadoraState, e: EntradaAlertas): Alerta[]
   for (const pl of s.plantios) {
     const st = statusPlantio(pl, e.hoje);
     add(st.nivel, "regulatorio", "ambiental", `Plantio compensatório ${pl.id}`, st.mensagem);
+  }
+
+  // v1.1 — Plano Diretor, Matriz de Risco do licenciamento, garantias de terceiros, caução e 5 vetores de campo.
+  if (Object.keys(s.ficha).length || s.lotes.length || s.processos.length) {
+    const pd = conformidadePlanoDiretor(s.ficha, s.lotes);
+    if (pd.status === "nao_conforme") add("vermelho", "regulatorio", "consultor", "Projeto não conforme com o Plano Diretor", pd.pendencias.slice(0, 4).join("; ") + ".");
+    else if (pd.status === "pendente" && s.processos.length) add("amarelo", "regulatorio", "consultor", "Análise do Plano Diretor pendente", "Trava de conformidade urbanística (F1.02): concluir e validar a análise antes do protocolo.");
+  }
+  for (const proc of s.processos) {
+    const pm = pendenciasMatriz(proc, e.hoje);
+    if (pm.length) add("amarelo", "regulatorio", "ambiental", `Matriz de Risco ${proc.id} · ${proc.orgao}`, pm.join("; ") + ".");
+  }
+  for (const g of s.garantias ?? []) {
+    const st = statusGarantia(g, e.hoje);
+    const ac = acionamentoAberto(g);
+    if (ac) {
+      const h = (Date.parse(e.agora) - Date.parse(ac.em.length === 10 ? `${ac.em}T12:00:00Z` : ac.em)) / 3_600_000;
+      add(h > 48 ? "vermelho" : "amarelo", "garantias", "diretoria_tecnica", `Garantia ${g.id} acionada · ${g.fornecedor}`, `${ac.descricao}${h > 48 ? ` — sem solução há ${Math.floor(h)} horas (limite 48 h)` : ""}.`);
+    } else if (st === "vencendo") add("amarelo", "garantias", "diretoria_tecnica", `Garantia ${g.id} vencendo · ${g.fornecedor}`, `${g.servico}: vence em ${dataBr(vencimentoGarantia(g))}. Vistoria antes do vencimento.`);
+  }
+  if (s.caucao && !s.caucao.descaucionadaEm) {
+    const c = situacaoCaucao(s.caucao, e.hoje);
+    if (c.diasPrazo !== null && c.diasPrazo < 0) add("critico", "garantias", "juridico", "Prazo de obras da caução vencido", `Termo ${s.caucao.termo}: prazo perante a Prefeitura venceu em ${dataBr(s.caucao.prazoObrasAte)}; ${c.presos} lote(s) seguem caucionados.`);
+    else if (c.diasPrazo !== null && c.diasPrazo <= 90) add(c.diasPrazo <= 30 ? "vermelho" : "amarelo", "garantias", "juridico", "Prazo de obras da caução", `Termo ${s.caucao.termo}: ${c.diasPrazo} dia(s) para o prazo de ${dataBr(s.caucao.prazoObrasAte)}.`);
+    if (c.marcosVencidos.length) add("amarelo", "garantias", "juridico", "Liberação de caução atrasada", c.marcosVencidos.map((m) => `${m.id} ${m.descricao} (previsto ${dataBr(m.previstoEm)})`).join("; ") + ".");
+  }
+  if (s.diarios.length) {
+    const de = new Date(Date.parse(`${e.hoje}T12:00:00Z`) - 29 * 86_400_000).toISOString().slice(0, 10);
+    for (const r of resumoVetores(s.diarios, de, e.hoje, s.limiteChuvaMm ?? 10)) {
+      if (r.diasComImpacto > 7) add("amarelo", "cronograma", "canteiro", `Vetor de campo: ${VETOR_LABEL[r.vetor]}`, `${r.diasComImpacto} dia(s) com impacto nos últimos 30 (${r.diasParalisados} paralisado(s))${r.ultimaObs ? ` — ${r.ultimaObs}` : ""}.`);
+    }
   }
 
   // Fase 3 — comercial.

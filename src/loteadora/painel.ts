@@ -8,6 +8,8 @@ import { indiceRefacao, rncAberta } from "./qualidade";
 import { compararReforecast } from "./reforecast";
 import { PARAMETROS_PADRAO, processoEncerrado, relogioCartorio } from "./regulatorio";
 import type { LoteadoraState } from "./state";
+import { indiceGarantias, situacaoCaucao } from "./garantias";
+import { conformidadePlanoDiretor } from "./cadastro";
 
 /**
  * Fase 3 — Painel Executivo 360º (documento, módulo 7): uma linha por empreendimento para a visão
@@ -54,12 +56,12 @@ export function resumoEmpreendimento(s: LoteadoraState, e: EntradaAlertas): Resu
 
 export const PERFIS = ["presidencia", "engenharia", "ambiental", "financeiro"] as const;
 export type Perfil = (typeof PERFIS)[number];
-export const PERFIL_LABEL: Record<Perfil, string> = { presidencia: "Presidência", engenharia: "Engenharia e obras", ambiental: "Ambiental e regulatório", financeiro: "Financeiro" };
+export const PERFIL_LABEL: Record<Perfil, string> = { presidencia: "Presidência", engenharia: "Engenharia e obras", ambiental: "Regulatório e jurídico", financeiro: "Financeiro" };
 /** Papéis cujos alertas cada visão mostra (a Presidência vê tudo). */
 export const PAPEIS_DO_PERFIL: Record<Perfil, readonly Papel[] | "todos"> = {
   presidencia: "todos",
   engenharia: ["diretoria_tecnica", "canteiro", "projetista"],
-  ambiental: ["ambiental"],
+  ambiental: ["ambiental", "juridico", "consultor"],
   financeiro: ["cfo", "comercial"],
 };
 
@@ -85,15 +87,22 @@ export function kpisPerfil(perfil: Perfil, s: LoteadoraState, e: EntradaAlertas 
   const cartorio: Kpi = { rotulo: "Prazo caducal do cartório", valor: r.saldoCartorio === null ? (s.cartorio?.registradoEm ? "Registrado" : "—") : `${r.saldoCartorio} dias`, nivel: r.saldoCartorio === null ? "verde" : r.saldoCartorio <= 60 ? "critico" : r.saldoCartorio <= 90 ? "vermelho" : r.saldoCartorio <= 150 ? "amarelo" : "verde", dica: "Meta: registro até D+120" };
   const idp: Kpi = { rotulo: "IDP (prazo)", valor: e.idp ? e.idp.toFixed(2).replace(".", ",") : "—", nivel: nivelIdx(e.idp), dica: "Meta ≥ 0,95" };
   const idc: Kpi = { rotulo: "IDC (custo)", valor: e.idc ? e.idc.toFixed(2).replace(".", ",") : "—", nivel: nivelIdx(e.idc), dica: "Meta ≥ 0,95" };
-  const margem: Kpi = { rotulo: "Margem bruta", valor: pct(r.margemBruta), nivel: r.margemBruta !== null && s.metaMargem !== undefined && r.margemBruta < s.metaMargem ? "vermelho" : "verde", dica: s.metaMargem !== undefined ? `Meta ${pct(s.metaMargem)}` : "Defina VGV e meta em Custos" };
+  const margem: Kpi = { rotulo: "Margem bruta", valor: pct(r.margemBruta), nivel: r.margemBruta !== null && s.metaMargem !== undefined && r.margemBruta < s.metaMargem ? "vermelho" : "verde", dica: s.metaMargem !== undefined ? `Meta ${pct(s.metaMargem)}` : "Defina VGV e meta em Custos (Nova Marina: 72,9%)" };
   const vendas: Kpi = { rotulo: "VGV vendido", valor: brl(ind.vgvVendido), nivel: "verde", dica: `${ind.lotesVendidos} de ${ind.breakevenLotes} lotes do breakeven (${pct(ind.progressoBreakeven, 0)})` };
   const rnc: Kpi = { rotulo: "RNCs abertas", valor: String(r.rncAbertas), nivel: r.rncAbertas ? "amarelo" : "verde", dica: "Meta: nenhuma com mais de 7 dias" };
   const refacao = custos ? indiceRefacao(s.rncs, custos.totalReforecast) : null;
   const inad: Kpi = { rotulo: "Inadimplência > 30 dias", valor: pct(ind.inadimplencia), nivel: ind.inadimplencia !== null && ind.inadimplencia > 0.05 ? "vermelho" : "verde" };
+  // v1.1 — garantias de terceiros, caução municipal e Plano Diretor.
+  const ig = indiceGarantias(s.garantias ?? [], s.frentes, e.hoje);
+  const garantias: Kpi = { rotulo: "Garantias de terceiros", valor: ig.pct === null ? "—" : pct(ig.pct, 0), nivel: ig.pct !== null && ig.pct < 1 ? "amarelo" : "verde", dica: `${ig.cobertas} de ${ig.exigidas} frente(s) concluída(s) com garantia vigente · meta 100%` };
+  const sc = situacaoCaucao(s.caucao, e.hoje);
+  const caucao: Kpi = { rotulo: "Caução municipal", valor: !s.caucao ? "—" : s.caucao.descaucionadaEm ? "Liberada" : `${sc.presos} lote(s) caucionado(s)`, nivel: sc.diasPrazo !== null && sc.diasPrazo < 0 ? "critico" : sc.marcosVencidos.length || (sc.diasPrazo !== null && sc.diasPrazo <= 90) ? "amarelo" : "verde", dica: s.caucao && !s.caucao.descaucionadaEm && sc.diasPrazo !== null ? `Prazo de obras: ${sc.diasPrazo} dia(s)` : "Termo de caução (F3.01)" };
+  const pd = conformidadePlanoDiretor(s.ficha, s.lotes);
+  const planoDiretor: Kpi = { rotulo: "Plano Diretor", valor: pd.status === "conforme" ? "Conforme" : pd.status === "nao_conforme" ? "Não conforme" : "Pendente", nivel: pd.status === "conforme" ? "verde" : pd.status === "nao_conforme" ? "vermelho" : "amarelo", dica: "Trava de conformidade urbanística (F1.02)" };
   const k: Record<Perfil, Kpi[]> = {
-    presidencia: [cartorio, vendas, margem, idp, idc, { rotulo: "Alçadas pendentes", valor: String(r.alcadasPendentes), nivel: r.alcadasPendentes > 5 ? "amarelo" : "verde" }],
-    engenharia: [idp, { rotulo: "Avanço físico dos trechos", valor: r.avancoFisico === null ? "—" : `${String(r.avancoFisico).replace(".", ",")}%`, nivel: "verde" }, rnc, { rotulo: "Índice de refação", valor: refacao === null ? "—" : `${refacao.toFixed(2).replace(".", ",")}%`, nivel: refacao !== null && refacao >= 1.5 ? "vermelho" : "verde", dica: "Meta < 1,5%" }, { rotulo: "Dias perdidos por chuva", valor: String(s.diarios.filter((d) => d.clima === "chuva_forte" || d.chuvaMm >= (s.limiteChuvaMm ?? 10)).length), nivel: "verde" }],
-    ambiental: [cartorio, { rotulo: "Processos abertos", valor: String(s.processos.filter((p) => !processoEncerrado(p)).length), nivel: "verde" }, { rotulo: "RET em curso", valor: String(s.processos.filter((p) => p.ret && !p.ret.respondidoEm && !processoEncerrado(p)).length), nivel: "verde" }],
+    presidencia: [cartorio, vendas, margem, idp, idc, caucao, { rotulo: "Alçadas pendentes", valor: String(r.alcadasPendentes), nivel: r.alcadasPendentes > 5 ? "amarelo" : "verde" }],
+    engenharia: [idp, { rotulo: "Avanço físico dos trechos", valor: r.avancoFisico === null ? "—" : `${String(r.avancoFisico).replace(".", ",")}%`, nivel: "verde" }, rnc, garantias, { rotulo: "Índice de refação", valor: refacao === null ? "—" : `${refacao.toFixed(2).replace(".", ",")}%`, nivel: refacao !== null && refacao >= 1.5 ? "vermelho" : "verde", dica: "Meta < 1,5%" }, { rotulo: "Dias perdidos por chuva", valor: String(s.diarios.filter((d) => d.clima === "chuva_forte" || d.chuvaMm >= (s.limiteChuvaMm ?? 10)).length), nivel: "verde" }],
+    ambiental: [cartorio, planoDiretor, caucao, garantias, { rotulo: "Processos abertos", valor: String(s.processos.filter((p) => !processoEncerrado(p)).length), nivel: "verde" }, { rotulo: "RET em curso", valor: String(s.processos.filter((p) => p.ret && !p.ret.respondidoEm && !processoEncerrado(p)).length), nivel: "verde" }],
     financeiro: [idc, margem, { rotulo: "Desvio do reforecast", valor: pct(r.desvioCusto), nivel: custos?.nivelTotal ?? "verde", dica: "Alerta em 3% e 5%" }, { rotulo: "Carteira a receber", valor: brl(ind.carteira), nivel: "verde", dica: `Recebido ${brl(ind.recebido)}` }, inad, { rotulo: "VSO do mês", valor: pct(ind.vsoMes), nivel: "verde" }],
   };
   return { kpis: k[perfil], alertas };

@@ -3,6 +3,7 @@ import { isValidCnpj } from "../tax/cnpj";
 import { daysBetween, isIsoDate, isObj, nonNeg, optText, text, type Nivel } from "./common";
 import type { Lote } from "./cadastro";
 import type { Cartorio } from "./regulatorio";
+import { travaCaucao, type Caucao } from "./garantias";
 
 /**
  * Fase 3 — comercial (documento, F6.01 a F6.07): tabela de vendas com trava legal do R-01,
@@ -150,6 +151,8 @@ export interface PropostaVenda {
   criadaEm: string;
   criadaPor: string;
   credito?: { aprovado: boolean; por: string; em: string; nota?: string };
+  /** v1.1 (F6.03) — dupla chancela: análise documental do comprador e minuta pelo Jurídico. */
+  chancelaJuridica?: { aprovado: boolean; por: string; em: string; nota?: string };
   /** Alçada de exceção de tabela (Presidência), quando a proposta foge da tabela. */
   solicitacaoId?: string;
   desistenciaEm?: string;
@@ -166,6 +169,9 @@ export function cleanProposta(v: unknown): PropostaVenda | null {
   const p: PropostaVenda = { id, reservaId, loteId, comprador, valorTabela: v.valorTabela, valor: v.valor, entrada: v.entrada, parcelas: v.parcelas, criadaEm: v.criadaEm, criadaPor };
   if (isObj(v.credito) && typeof v.credito.aprovado === "boolean" && text(v.credito.por, 100) && validIso(v.credito.em)) {
     p.credito = { aprovado: v.credito.aprovado, por: text(v.credito.por, 100)!, em: v.credito.em, ...(optText(v.credito.nota, 500) ? { nota: optText(v.credito.nota, 500) } : {}) };
+  }
+  if (isObj(v.chancelaJuridica) && typeof v.chancelaJuridica.aprovado === "boolean" && text(v.chancelaJuridica.por, 100) && validIso(v.chancelaJuridica.em)) {
+    p.chancelaJuridica = { aprovado: v.chancelaJuridica.aprovado, por: text(v.chancelaJuridica.por, 100)!, em: v.chancelaJuridica.em, ...(optText(v.chancelaJuridica.nota, 500) ? { nota: optText(v.chancelaJuridica.nota, 500) } : {}) };
   }
   const s = optText(v.solicitacaoId, 20);
   if (s) p.solicitacaoId = s;
@@ -294,9 +300,11 @@ export function statusEspelho(lote: Lote, c: Comercial, agoraIso: string): Lote[
   return lote.comercial === "bloqueado" ? "bloqueado" : "disponivel";
 }
 
-export function reservar(c: Comercial, lote: Lote, cartorio: Cartorio | undefined, comprador: Comprador, corretor: string, agoraIso: string): Comercial {
+export function reservar(c: Comercial, lote: Lote, cartorio: Cartorio | undefined, comprador: Comprador, corretor: string, agoraIso: string, caucao?: Caucao): Comercial {
   const trava = travaR01(lote, cartorio);
   if (trava) throw new PmoError(`Trava legal: ${trava}.`);
+  const tc = travaCaucao(lote.id, caucao);
+  if (tc) throw new PmoError(`${tc}.`);
   if (lote.comercial === "bloqueado") throw new PmoError(`Lote ${lote.id} bloqueado para venda.`);
   if (!c.tabela) throw new PmoError("Publique a tabela de vendas antes de reservar.");
   const oc = ocupacaoLote(c, lote.id, agoraIso);
@@ -330,9 +338,20 @@ export function analisarCredito(c: Comercial, propostaId: string, aprovado: bool
   return { ...c, propostas: c.propostas.map((x) => (x.id === propostaId ? { ...x, credito: { aprovado, por: por.trim().slice(0, 100) || "—", em: agoraIso, ...(nota?.trim() ? { nota: nota.trim().slice(0, 500) } : {}) } } : x)) };
 }
 
+/** F6.03 — chancela do Jurídico (segunda chancela, além do crédito pelo Financeiro). */
+export function chancelarJuridico(c: Comercial, propostaId: string, aprovado: boolean, por: string, agoraIso: string, nota?: string): Comercial {
+  const p = c.propostas.find((x) => x.id === propostaId);
+  if (!p || p.desistenciaEm) throw new PmoError("Proposta inexistente ou encerrada.");
+  if (p.chancelaJuridica) throw new PmoError("A chancela jurídica já foi registrada.");
+  if (!aprovado && (nota?.trim().length ?? 0) < 5) throw new PmoError("Informe o motivo da recusa jurídica.");
+  return { ...c, propostas: c.propostas.map((x) => (x.id === propostaId ? { ...x, chancelaJuridica: { aprovado, por: por.trim().slice(0, 100) || "—", em: agoraIso, ...(nota?.trim() ? { nota: nota.trim().slice(0, 500) } : {}) } } : x)) };
+}
+
 export interface ContextoContrato {
   lote: Lote;
   cartorio?: Cartorio;
+  /** Caução municipal (v1.1): lote caucionado não vende. */
+  caucao?: Caucao;
   /** A alçada de exceção (se houver) está aprovada? */
   excecaoAprovada: boolean;
 }
@@ -342,6 +361,10 @@ export function travasContrato(c: Comercial, p: PropostaVenda, x: ContextoContra
   const t: string[] = [];
   const r01 = travaR01(x.lote, x.cartorio);
   if (r01) t.push(r01);
+  const tc = travaCaucao(x.lote.id, x.caucao);
+  if (tc) t.push(tc);
+  if (!p.chancelaJuridica) t.push("Chancela jurídica pendente (análise documental e minuta)");
+  else if (!p.chancelaJuridica.aprovado) t.push("Chancela jurídica negada");
   if (!p.credito) t.push("Análise de crédito pendente");
   else if (!p.credito.aprovado) t.push("Crédito reprovado");
   if (c.tabela && excecoesTabela(p, c.tabela).length && !x.excecaoAprovada) t.push("Exceção de tabela sem aprovação da Presidência");

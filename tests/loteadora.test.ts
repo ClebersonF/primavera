@@ -85,7 +85,7 @@ describe("central de alçadas", () => {
   const base = (p: Partial<Solicitacao> = {}) => ({ ...novaSolicitacao({ id: "AL-0001", tipo: "contratacao", titulo: "Guias e sarjetas", valor: 420_000, criadaPor: "Elvis", criadaEm: "2026-11-20T09:00:00Z" }), ...p });
   it("segue Diretoria → Presidência → CFO e confere o papel de quem decide", () => {
     let s = base();
-    expect(() => decidir(s, pres, "aprovar", "2026-11-20T10:00:00Z")).toThrow(/Pré-aprovação técnica é decisão/);
+    expect(() => decidir(s, pres, "aprovar", "2026-11-20T10:00:00Z")).toThrow(/Pré-aprovação diretiva\/jurídica é decisão/);
     s = decidir(s, eng, "aprovar", "2026-11-20T10:00:00Z");
     expect(statusSolicitacao(s).proxima).toBe("presidencia");
     expect(() => decidir(s, cfo, "aprovar", "2026-11-20T11:00:00Z")).toThrow(/Presidência/);
@@ -149,7 +149,10 @@ describe("reforecast e alertas", () => {
       solicitacoes: [], etapas, reforecasts: [],
     };
     const al = alertasLoteadora(s, { hoje: "2026-11-25", agora: "2026-11-25T12:00:00Z", atrasos: [{ atividade: "Drenagem Rua 2", dias: 9 }] });
-    expect(al.map((a) => [a.nivel, a.area])).toEqual([["critico", "comercial"], ["vermelho", "regulatorio"], ["amarelo", "cartorio"], ["amarelo", "custos"], ["amarelo", "cronograma"]]);
+    expect(al.map((a) => [a.nivel, a.area])).toEqual([["critico", "comercial"], ["vermelho", "regulatorio"], ["amarelo", "cartorio"], ["amarelo", "custos"], ["amarelo", "cronograma"], ["amarelo", "regulatorio"], ["amarelo", "regulatorio"]]);
+    // v1.1: análise do Plano Diretor pendente e Matriz de Risco ausente no processo.
+    expect(al.slice(-2).map((a) => a.titulo)).toEqual(["Análise do Plano Diretor pendente", "Matriz de Risco PR-001 · CETESB"]);
+    expect(al[1]!.papeis).toContain("juridico");
     expect(al[0]!.destinatarios.map((m) => m.nome)).toContain("José Benedito");
     expect(al[1]!.destinatarios.map((m) => m.nome)).not.toContain("José Benedito");
     expect(al[2]!.papeis).toEqual(["ambiental", "diretoria_tecnica"]);

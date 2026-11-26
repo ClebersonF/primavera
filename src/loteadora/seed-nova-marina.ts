@@ -18,6 +18,8 @@ export const NOVA_MARINA = {
   areaInstitucionalM2: 6_365.33,
   totalLotes: 295,
   vgv: 127_283_100,
+  /** Meta de margem bruta do Nova Marina (documento operacional v1.1, seção 6). */
+  metaMargem: 0.729,
   breakevenLotes: 80,
   custoBreakeven: 34_496_367.61,
   mudasTcra: 6_915,
@@ -97,6 +99,10 @@ export function aplicarSeedNovaMarina(s: LoteadoraState, agoraIso: string, por: 
     e = { ...e, vgv: nm.vgv };
     incluidos.push("VGV de referência");
   } else mantidos.push("VGV");
+  if (e.metaMargem === undefined) {
+    e = { ...e, metaMargem: nm.metaMargem };
+    incluidos.push("meta de margem de 72,9%");
+  } else mantidos.push("meta de margem");
   if (e.comercial.breakevenLotes === undefined) {
     e = { ...e, comercial: { ...e.comercial, breakevenLotes: nm.breakevenLotes } };
     incluidos.push("breakeven de 80 lotes");

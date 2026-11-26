@@ -57,6 +57,85 @@ export interface ProcessoRegulatorio {
   eventos: EventoProcesso[];
   ret?: Ret;
   certificado?: Certificado;
+  /** v1.1 (F2.02/F2.03) — Matriz de Risco do licenciamento, revista a cada check-in. */
+  riscos?: RiscoLicenciamento[];
+}
+
+/** Item da Matriz de Risco do licenciamento (probabilidade × impacto, 1 a 5). */
+export interface RiscoLicenciamento {
+  id: string;
+  descricao: string;
+  probabilidade: number;
+  impacto: number;
+  mitigacao?: string;
+  responsavel?: string;
+  revisadoEm: string;
+  encerrado?: boolean;
+}
+
+export const scoreRisco = (r: RiscoLicenciamento) => r.probabilidade * r.impacto;
+/** Faixa do risco: até 6 baixo, até 14 médio, a partir de 15 alto. */
+export const faixaRisco = (r: RiscoLicenciamento): "baixo" | "medio" | "alto" => (scoreRisco(r) >= 15 ? "alto" : scoreRisco(r) >= 7 ? "medio" : "baixo");
+
+function cleanRisco(v: unknown): RiscoLicenciamento | null {
+  if (!isObj(v)) return null;
+  const id = text(v.id, 20), descricao = text(v.descricao, 400);
+  const nota = (n: unknown) => typeof n === "number" && Number.isInteger(n) && n >= 1 && n <= 5;
+  if (!id || !descricao || !nota(v.probabilidade) || !nota(v.impacto) || !isIsoDate(v.revisadoEm)) return null;
+  const r: RiscoLicenciamento = { id, descricao, probabilidade: v.probabilidade as number, impacto: v.impacto as number, revisadoEm: v.revisadoEm };
+  const m = optText(v.mitigacao, 600);
+  if (m) r.mitigacao = m;
+  const resp = optText(v.responsavel, 100);
+  if (resp) r.responsavel = resp;
+  if (v.encerrado === true) r.encerrado = true;
+  return r;
+}
+
+export function incluirRisco(proc: ProcessoRegulatorio, dados: Omit<RiscoLicenciamento, "id">): ProcessoRegulatorio {
+  const lista = proc.riscos ?? [];
+  const r = cleanRisco({ ...dados, id: `R${lista.length + 1}` });
+  if (!r) throw new PmoError("Risco inválido: descreva o risco e dê probabilidade e impacto de 1 a 5.");
+  if (faixaRisco(r) === "alto" && !r.mitigacao) throw new PmoError("Risco alto exige plano de mitigação.");
+  return { ...proc, riscos: [...lista, r] };
+}
+
+/** Pendências da Matriz de Risco do processo: obrigatória (F2.02) e revista no check-in semanal (F2.03). */
+export function pendenciasMatriz(proc: ProcessoRegulatorio, hoje: string, checkinDias = 7): string[] {
+  if (processoEncerrado(proc)) return [];
+  const ativos = (proc.riscos ?? []).filter((r) => !r.encerrado);
+  const out: string[] = [];
+  if (!ativos.length) out.push("sem Matriz de Risco");
+  else {
+    const ultima = ativos.reduce((m, r) => (r.revisadoEm > m ? r.revisadoEm : m), "");
+    if (proc.situacao !== "em_elaboracao" && daysBetween(ultima, hoje) > checkinDias) out.push(`Matriz de Risco sem revisão há ${daysBetween(ultima, hoje)} dias`);
+    const altos = ativos.filter((r) => faixaRisco(r) === "alto" && !r.mitigacao);
+    if (altos.length) out.push(`${altos.length} risco(s) alto(s) sem mitigação`);
+  }
+  return out;
+}
+
+/**
+ * Travas para protocolar (F2.01/F2.02): Matriz de Risco montada e, na frente municipal, a análise do
+ * Plano Diretor concluída e conforme (v1.1). `planoDiretor` vem de `conformidadePlanoDiretor(...).status`.
+ */
+export function travasProtocolo(proc: ProcessoRegulatorio, planoDiretor: "pendente" | "conforme" | "nao_conforme"): string[] {
+  const t: string[] = [];
+  if (!(proc.riscos ?? []).some((r) => !r.encerrado)) t.push("Matriz de Risco do licenciamento obrigatória antes do protocolo (F2.02)");
+  if (planoDiretor !== "conforme") t.push(planoDiretor === "pendente" ? "Análise do Plano Diretor não concluída (F1.02)" : "Projeto não conforme com o Plano Diretor");
+  return t;
+}
+
+/** Planilha Própria de Acompanhamento (F2.02): uma linha por processo, em CSV (; e decimal brasileiro). */
+export function planilhaAcompanhamentoCsv(processos: readonly ProcessoRegulatorio[], hoje: string): string {
+  const q = (t: string) => (/[;"\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t);
+  const linhas = ["frente;orgao;assunto;protocolo;situacao;ultimo_evento;data_ultimo_evento;ret_emitido;ret_respondido;certificado;riscos_ativos;maior_risco;pendencias"];
+  for (const p of processos) {
+    const ult = p.eventos.at(-1);
+    const ativos = (p.riscos ?? []).filter((r) => !r.encerrado);
+    const maior = ativos.reduce((m, r) => Math.max(m, scoreRisco(r)), 0);
+    linhas.push([FRENTE_LABEL[p.frente], p.orgao, p.assunto, p.protocolo ?? "", SITUACAO_LABEL[p.situacao], ult?.descricao ?? "", ult?.data ?? "", p.ret?.emitidoEm ?? "", p.ret?.respondidoEm ?? "", p.certificado?.emitidoEm ?? "", String(ativos.length), maior ? String(maior) : "", pendenciasMatriz(p, hoje).join(" | ")].map(q).join(";"));
+  }
+  return linhas.join("\n");
 }
 
 export interface NotaDevolutiva { recebidaEm: string; respondidaEm?: string }
@@ -142,6 +221,8 @@ export function cleanProcesso(v: unknown): ProcessoRegulatorio | null {
     if (isIsoDate(v.certificado.renovadoEm) && v.certificado.renovadoEm >= c.emitidoEm) c.renovadoEm = v.certificado.renovadoEm;
     p.certificado = c;
   }
+  const riscos = (Array.isArray(v.riscos) ? v.riscos : []).flatMap((r) => cleanRisco(r) ?? []).slice(0, 60);
+  if (riscos.length) p.riscos = riscos;
   return p;
 }
 
